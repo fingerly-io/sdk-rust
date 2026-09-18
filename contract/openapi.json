@@ -1,0 +1,4094 @@
+{
+  "components": {
+    "schemas": {
+      "AttestationChallengeOut": {
+        "properties": {
+          "challenge": {
+            "description": "Base64-encoded one-use attestation nonce",
+            "type": "string"
+          },
+          "expires_at": {
+            "description": "When the nonce becomes unusable",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "challenge",
+          "expires_at"
+        ],
+        "type": "object"
+      },
+      "CreatedWebhookOut": {
+        "properties": {
+          "endpoint": {
+            "$ref": "#/components/schemas/WebhookEndpointOut"
+          },
+          "secret": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "endpoint",
+          "secret"
+        ],
+        "type": "object"
+      },
+      "ErrorBody": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "details": {
+            "items": {
+              "$ref": "#/components/schemas/ErrorDetail"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "status": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "status"
+        ],
+        "type": "object"
+      },
+      "ErrorDetail": {
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "issue": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "issue",
+          "location"
+        ],
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      },
+      "EventRowOut": {
+        "properties": {
+          "agent": {
+            "type": "string"
+          },
+          "agent_version": {
+            "type": "string"
+          },
+          "anonymity_network": {
+            "type": "string"
+          },
+          "asn": {
+            "type": "string"
+          },
+          "asn_name": {
+            "type": "string"
+          },
+          "country_code": {
+            "type": "string"
+          },
+          "country_name": {
+            "type": "string"
+          },
+          "device_kind": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "has_document": {
+            "type": "boolean"
+          },
+          "ip_address": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "os": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "sdk_platform": {
+            "type": "string"
+          },
+          "sdk_version": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "suspect_level": {
+            "type": "string"
+          },
+          "suspect_score": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "tag": {
+            "type": "string"
+          },
+          "triggers": {
+            "items": {
+              "$ref": "#/components/schemas/EventTriggerOut"
+            },
+            "type": "array"
+          },
+          "url_host": {
+            "type": "string"
+          },
+          "url_path": {
+            "type": "string"
+          },
+          "visitor_id": {
+            "type": "string"
+          },
+          "visitor_kind": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "environment",
+          "has_document",
+          "ip_address",
+          "occurred_at",
+          "platform",
+          "request_id",
+          "sdk_platform",
+          "sdk_version",
+          "state",
+          "triggers",
+          "visitor_id"
+        ],
+        "type": "object"
+      },
+      "EventTriggerOut": {
+        "properties": {
+          "confidence": {
+            "type": "string"
+          },
+          "signal": {
+            "type": "string"
+          },
+          "weight": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "signal",
+          "weight"
+        ],
+        "type": "object"
+      },
+      "IdentifyIn": {
+        "properties": {
+          "sdk": {
+            "$ref": "#/components/schemas/SDKInfo",
+            "description": "Which SDK collected these signals"
+          },
+          "signals": {
+            "additionalProperties": {},
+            "description": "The platform-specific signals the SDK collected",
+            "type": "object"
+          },
+          "tag": {
+            "description": "An opaque value echoed back on the event",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sdk",
+          "signals"
+        ],
+        "type": "object"
+      },
+      "IdentifyOut": {
+        "properties": {
+          "deferred_token": {
+            "description": "Short-lived capability for the deferred signal report",
+            "type": "string"
+          },
+          "duplicate": {
+            "description": "This submission was answered before; the verdict belongs to the first one",
+            "type": "boolean"
+          },
+          "identifiable": {
+            "description": "False when the report carried too little to identify anyone",
+            "type": "boolean"
+          },
+          "reason": {
+            "description": "Why enrichment did not happen",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Identifies this submission",
+            "type": "string"
+          },
+          "state": {
+            "description": "Whether the address could be enriched",
+            "type": "string"
+          },
+          "suspect_level": {
+            "description": "low, medium or high",
+            "type": "string"
+          },
+          "suspect_score": {
+            "description": "The weighted sum of the signals that fired",
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "triggers": {
+            "description": "What fired, and what each was worth",
+            "items": {
+              "$ref": "#/components/schemas/IdentifyTriggerOut"
+            },
+            "type": "array"
+          },
+          "visitor_confidence": {
+            "description": "How sure we are about visitor_id, 0 to 100",
+            "format": "int32",
+            "type": "integer"
+          },
+          "visitor_id": {
+            "description": "Who this visitor is, stable across their visits",
+            "type": "string"
+          },
+          "visitor_is_new": {
+            "description": "Whether this is the first time this visitor has been seen",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "identifiable",
+          "request_id",
+          "state",
+          "visitor_confidence",
+          "visitor_id",
+          "visitor_is_new"
+        ],
+        "type": "object"
+      },
+      "IdentifyTriggerOut": {
+        "properties": {
+          "confidence": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          },
+          "signal": {
+            "type": "string"
+          },
+          "weight": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "signal",
+          "weight"
+        ],
+        "type": "object"
+      },
+      "IssuedProxyCredentialOut": {
+        "properties": {
+          "credential": {
+            "$ref": "#/components/schemas/ProxyCredentialOut"
+          },
+          "secret": {
+            "description": "Returned once and never stored in plaintext",
+            "type": "string"
+          }
+        },
+        "required": [
+          "credential",
+          "secret"
+        ],
+        "type": "object"
+      },
+      "IssuedSDKKeyOut": {
+        "properties": {
+          "key": {
+            "$ref": "#/components/schemas/SDKKeyOut"
+          },
+          "secret": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "secret"
+        ],
+        "type": "object"
+      },
+      "ManagementCallerOut": {
+        "properties": {
+          "key_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "organization_id": {
+            "description": "The organization every management route acts on",
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "role": {
+            "description": "admin or developer",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key_id",
+          "name",
+          "organization_id",
+          "region",
+          "role"
+        ],
+        "type": "object"
+      },
+      "ProxyCredentialOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "last4": {
+            "type": "string"
+          },
+          "last_used_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "prefix": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "revoked_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "created_at",
+          "environment",
+          "id",
+          "last4",
+          "name",
+          "prefix",
+          "region",
+          "status"
+        ],
+        "type": "object"
+      },
+      "ProxyCredentialsOut": {
+        "properties": {
+          "credentials": {
+            "items": {
+              "$ref": "#/components/schemas/ProxyCredentialOut"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "credentials"
+        ],
+        "type": "object"
+      },
+      "RiskWeightsOut": {
+        "properties": {
+          "max_weight": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "organization_id": {
+            "type": "string"
+          },
+          "platforms": {
+            "items": {
+              "$ref": "#/components/schemas/RiskWeightsPlatformOut"
+            },
+            "type": "array"
+          },
+          "scope": {
+            "description": "organization or key",
+            "type": "string"
+          },
+          "sdk_key_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "max_weight",
+          "organization_id",
+          "platforms",
+          "scope"
+        ],
+        "type": "object"
+      },
+      "RiskWeightsPlatformOut": {
+        "properties": {
+          "defaults": {
+            "additionalProperties": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "residential_proxy_weights_mode": {
+            "description": "method or confidence",
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "scope": {
+            "description": "key, organization or default",
+            "type": "string"
+          },
+          "signals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "stored": {
+            "description": "Whether this scope has its own saved configuration",
+            "type": "boolean"
+          },
+          "suspect_threshold": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updated_by_user_id": {
+            "type": "string"
+          },
+          "vpn_weights_mode": {
+            "description": "method or confidence",
+            "type": "string"
+          },
+          "weights": {
+            "additionalProperties": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "defaults",
+          "platform",
+          "residential_proxy_weights_mode",
+          "scope",
+          "signals",
+          "stored",
+          "suspect_threshold",
+          "vpn_weights_mode",
+          "weights"
+        ],
+        "type": "object"
+      },
+      "SDKEventOut": {
+        "properties": {
+          "agent": {
+            "type": "string"
+          },
+          "agent_version": {
+            "type": "string"
+          },
+          "anonymity_network": {
+            "type": "string"
+          },
+          "asn": {
+            "type": "string"
+          },
+          "asn_name": {
+            "type": "string"
+          },
+          "country_code": {
+            "type": "string"
+          },
+          "country_name": {
+            "type": "string"
+          },
+          "deferred_signals": {
+            "description": "The deferred report attached to this request, when one arrived. Its contents are not a public contract.",
+            "type": "object"
+          },
+          "device_kind": {
+            "type": "string"
+          },
+          "document": {
+            "description": "The archived submission as Fingerly stored it, with the threshold and weights profile that scored it. Present when has_document is true. Its contents are not a public contract.",
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "environment": {
+            "type": "string"
+          },
+          "has_document": {
+            "type": "boolean"
+          },
+          "ip_address": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "os": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "sdk_platform": {
+            "type": "string"
+          },
+          "sdk_version": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "suspect_level": {
+            "type": "string"
+          },
+          "suspect_score": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "tag": {
+            "type": "string"
+          },
+          "triggers": {
+            "items": {
+              "$ref": "#/components/schemas/EventTriggerOut"
+            },
+            "type": "array"
+          },
+          "url_host": {
+            "type": "string"
+          },
+          "url_path": {
+            "type": "string"
+          },
+          "visitor_id": {
+            "type": "string"
+          },
+          "visitor_kind": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "environment",
+          "has_document",
+          "ip_address",
+          "occurred_at",
+          "platform",
+          "request_id",
+          "sdk_platform",
+          "sdk_version",
+          "state",
+          "triggers",
+          "visitor_id"
+        ],
+        "type": "object"
+      },
+      "SDKEventsOut": {
+        "properties": {
+          "page": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "page_size": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/EventRowOut"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "page",
+          "page_size",
+          "rows"
+        ],
+        "type": "object"
+      },
+      "SDKInfo": {
+        "properties": {
+          "platform": {
+            "description": "The SDK that collected these signals",
+            "type": "string"
+          },
+          "version": {
+            "description": "The SDK's version, such as 0.1.0",
+            "type": "string"
+          }
+        },
+        "required": [
+          "platform",
+          "version"
+        ],
+        "type": "object"
+      },
+      "SDKKeyOut": {
+        "properties": {
+          "allowed_origins": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "description": "public or secret",
+            "type": "string"
+          },
+          "last4": {
+            "description": "The tail of the secret, which is all a console ever shows",
+            "type": "string"
+          },
+          "last_used_at": {
+            "description": "Written best-effort and batched",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "prefix": {
+            "description": "The human-readable stem, such as fly_pk_eu_production",
+            "type": "string"
+          },
+          "region": {
+            "description": "Immutable data residency inherited from the organization",
+            "type": "string"
+          },
+          "revoked_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revoked_by": {
+            "type": "string"
+          },
+          "status": {
+            "description": "active or revoked",
+            "type": "string"
+          }
+        },
+        "required": [
+          "allowed_origins",
+          "created_at",
+          "environment",
+          "id",
+          "kind",
+          "last4",
+          "name",
+          "prefix",
+          "region",
+          "status"
+        ],
+        "type": "object"
+      },
+      "SDKKeysOut": {
+        "properties": {
+          "keys": {
+            "items": {
+              "$ref": "#/components/schemas/SDKKeyOut"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "keys"
+        ],
+        "type": "object"
+      },
+      "SignalCatalogueOut": {
+        "properties": {
+          "default_threshold": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/SignalGroupOut"
+            },
+            "type": "array"
+          },
+          "max_weight": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "platforms": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "default_threshold",
+          "groups",
+          "max_weight",
+          "platforms"
+        ],
+        "type": "object"
+      },
+      "SignalGroupOut": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "platforms": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "signals": {
+            "items": {
+              "$ref": "#/components/schemas/SignalMemberOut"
+            },
+            "type": "array"
+          },
+          "weights": {
+            "additionalProperties": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "description",
+          "key",
+          "label",
+          "platforms",
+          "signals",
+          "weights"
+        ],
+        "type": "object"
+      },
+      "SignalMemberOut": {
+        "properties": {
+          "signal": {
+            "type": "string"
+          },
+          "weights": {
+            "additionalProperties": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "signal",
+          "weights"
+        ],
+        "type": "object"
+      },
+      "SupplementOut": {
+        "properties": {
+          "duplicate": {
+            "description": "The identical supplement was accepted before",
+            "type": "boolean"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "WebhookDeliveriesOut": {
+        "properties": {
+          "deliveries": {
+            "items": {
+              "$ref": "#/components/schemas/WebhookDeliveryOut"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "deliveries"
+        ],
+        "type": "object"
+      },
+      "WebhookDeliveryOut": {
+        "properties": {
+          "attempt": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "duration_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "endpoint_id": {
+            "type": "string"
+          },
+          "endpoint_url": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "event": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "response_code": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "attempt",
+          "duration_ms",
+          "endpoint_id",
+          "endpoint_url",
+          "environment",
+          "event",
+          "event_id",
+          "id",
+          "occurred_at",
+          "status"
+        ],
+        "type": "object"
+      },
+      "WebhookEndpointOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "delivered_24h": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "description": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "events": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "failed_24h": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "last_delivery_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "previous_secret_expires_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "secret_last4": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "created_at",
+          "delivered_24h",
+          "description",
+          "environment",
+          "events",
+          "failed_24h",
+          "id",
+          "secret_last4",
+          "status",
+          "url"
+        ],
+        "type": "object"
+      },
+      "WebhookTestOut": {
+        "properties": {
+          "event_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id"
+        ],
+        "type": "object"
+      },
+      "WebhooksOut": {
+        "properties": {
+          "endpoints": {
+            "items": {
+              "$ref": "#/components/schemas/WebhookEndpointOut"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "endpoints"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "managementKey": {
+        "description": "A management key, fly_mk_{region}_…. Server-side only: refused with a browser Origin.",
+        "in": "header",
+        "name": "x-api-key",
+        "type": "apiKey"
+      },
+      "publicKey": {
+        "description": "A public key, fly_pk_{region}_{environment}_…. Accepted from browsers only on its allowed origins.",
+        "in": "header",
+        "name": "x-api-key",
+        "type": "apiKey"
+      },
+      "secretKey": {
+        "description": "A secret key, fly_sk_{region}_{environment}_…. Server-side only: refused with a browser Origin.",
+        "in": "header",
+        "name": "x-api-key",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "contact": {
+      "email": "support@fingerly.io",
+      "name": "Fingerly support",
+      "url": "https://docs.fingerly.io"
+    },
+    "description": "Identify visitors, read identification events and manage your integration. Every request is authenticated with a key in the `x-api-key` header, and every key belongs to one region: use that region's server. Guides and field-by-field reference: https://docs.fingerly.io",
+    "title": "Fingerly API",
+    "version": "v1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/attestation/challenge": {
+      "post": {
+        "description": "Issues a one-time, five-minute challenge bound to the authenticated key. The Android SDK has the device keystore attest to it and includes the attestation in its identify request.",
+        "operationId": "requestAttestationChallenge",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttestationChallengeOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable x-api-key header was presented"
+          },
+          "402": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The organization this key belongs to is not accepting traffic"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "A challenge could not be issued just now"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "publicKey": []
+          }
+        ],
+        "summary": "Request an attestation challenge",
+        "tags": [
+          "Client API"
+        ]
+      }
+    },
+    "/api/v1/events": {
+      "get": {
+        "description": "Identification events from the secret key's own organization and environment, newest first, in a window of at most 30 days that starts at most 30 days ago. There is no total count: a page with fewer rows than `page_size` is the last.",
+        "operationId": "listEvents",
+        "parameters": [
+          {
+            "description": "Start, inclusive (RFC 3339); defaults to 24 hours ago",
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "End, exclusive (RFC 3339); defaults to now",
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "One-based page",
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows per page, capped at 200",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Exact visitor id",
+            "in": "query",
+            "name": "visitor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "low, medium or high",
+            "in": "query",
+            "name": "level",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SDKEventsOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable secret SDK key was presented"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "secretKey": []
+          }
+        ],
+        "summary": "List events",
+        "tags": [
+          "Server API"
+        ]
+      }
+    },
+    "/api/v1/events/{request_id}": {
+      "get": {
+        "description": "One identification event by its request ID, from the secret key's own organization and environment. Read it on your server to verify what a client reported before you act on it. An event is normally readable within a few seconds of the identification.",
+        "operationId": "getEvent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SDKEventOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable secret SDK key was presented"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No event with that request ID in this key's environment, or it is older than 30 days"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "secretKey": []
+          }
+        ],
+        "summary": "Get an event",
+        "tags": [
+          "Server API"
+        ]
+      }
+    },
+    "/api/v1/events/{request_id}/supplement": {
+      "post": {
+        "description": "Attaches the signals a browser collects after its initial budget to an identification that has already been answered. It never changes the visitor, the score, billing or webhooks. The JavaScript SDK sends it automatically. Resending the same report is answered as a duplicate.",
+        "operationId": "submitDeferredReport",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "sdk": {
+                    "$ref": "#/components/schemas/SDKInfo",
+                    "description": "Which SDK collected these signals"
+                  },
+                  "signals": {
+                    "additionalProperties": {},
+                    "description": "A report containing only the deferred tier",
+                    "type": "object"
+                  },
+                  "token": {
+                    "description": "The deferred_token returned by identify",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "sdk",
+                  "signals",
+                  "token"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplementOut"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable x-api-key header was presented"
+          },
+          "402": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The organization this key belongs to is not accepting traffic"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "A different deferred report was already accepted for this request"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The report could not be accepted just now"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "publicKey": []
+          }
+        ],
+        "summary": "Submit a deferred report",
+        "tags": [
+          "Client API"
+        ]
+      }
+    },
+    "/api/v1/identify": {
+      "post": {
+        "description": "Submits the signal report a client SDK collected and answers with the complete verdict: the request ID, the visitor ID and its confidence, and the suspect score, level and triggers. There is no second call to make.\n\nThe client SDKs build and send this request. `signals` is produced by them and is not a public contract. Send an `Idempotency-Key` header, and the same value on every retry, so a retried identification is answered and charged once.",
+        "operationId": "identifyVisitor",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentifyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentifyOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable x-api-key header was presented"
+          },
+          "402": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The organization this key belongs to is not accepting traffic"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The body is over 1 MiB"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The organization is over its rate limit"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The identification could not be answered just now"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "publicKey": []
+          },
+          {
+            "secretKey": []
+          }
+        ],
+        "summary": "Identify a visitor",
+        "tags": [
+          "Client API"
+        ]
+      }
+    },
+    "/api/v1/management/key": {
+      "get": {
+        "description": "The organization, role and region of the key the request was made with. Every other management route names the organization in its path; read it here.",
+        "operationId": "describeManagementKey",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementCallerOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The management key's role does not allow this"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Describe the management key",
+        "tags": [
+          "Management API"
+        ]
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/proxy-credentials": {
+      "get": {
+        "operationId": "listProxyKeys",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProxyCredentialsOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Only an admin key may manage proxy keys"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "List proxy keys",
+        "tags": [
+          "Management API"
+        ]
+      },
+      "post": {
+        "description": "The response carries `secret` in full, once.",
+        "operationId": "issueProxyKey",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "environment": {
+                    "description": "production, staging or development",
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "environment",
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuedProxyCredentialOut"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Only an admin key may manage proxy keys"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Issue a proxy key",
+        "tags": [
+          "Management API"
+        ]
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/proxy-credentials/{proxy_credential_id}/revoke": {
+      "post": {
+        "operationId": "revokeProxyKey",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "proxy_credential_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProxyCredentialOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Only an admin key may manage proxy keys"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Revoke a proxy key",
+        "tags": [
+          "Management API"
+        ]
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/risk-weights": {
+      "get": {
+        "description": "One profile per platform, with the shipped defaults beside it. Every key without a profile of its own is scored under these.",
+        "operationId": "readOrganizationRiskWeights",
+        "parameters": [
+          {
+            "description": "The organization whose weights these are",
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskWeightsOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The management key's role does not allow this"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Read the organization's risk weights",
+        "tags": [
+          "Management API"
+        ]
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/risk-weights/{platform}": {
+      "delete": {
+        "operationId": "restoreDefaultRiskWeightsPlatform",
+        "parameters": [
+          {
+            "description": "The organization whose weights these are",
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "web, android or ios",
+            "in": "path",
+            "name": "platform",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskWeightsPlatformOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Only an admin key may change risk weights"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Restore the default risk weights for a platform",
+        "tags": [
+          "Management API"
+        ]
+      },
+      "put": {
+        "description": "Every field is optional. Send the `revision` a read returned to be refused with 409 if someone saved in between. Applies to the next identification.",
+        "operationId": "saveOrganizationRiskWeightsPlatform",
+        "parameters": [
+          {
+            "description": "The organization whose weights these are",
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "web, android or ios",
+            "in": "path",
+            "name": "platform",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "residential_proxy_weights_mode": {
+                    "description": "method or confidence",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "revision": {
+                    "description": "The revision this edit was made against",
+                    "format": "int64",
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "suspect_threshold": {
+                    "description": "The score at which a request is called suspicious",
+                    "format": "int64",
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "vpn_weights_mode": {
+                    "description": "method or confidence",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "weights": {
+                    "additionalProperties": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "description": "Signal name to weight, 0-10000",
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskWeightsPlatformOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Only an admin key may change risk weights"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The weights changed since they were read"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "A weight, a mode or the threshold is not usable"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Save the organization's risk weights for a platform",
+        "tags": [
+          "Management API"
+        ]
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/sdk-keys": {
+      "get": {
+        "description": "Every public and secret key the organization holds, in every environment, revoked keys included. Secrets are never returned after issue.",
+        "operationId": "listSdkKeys",
+        "parameters": [
+          {
+            "description": "The organization whose keys these are",
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SDKKeysOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The key's role cannot manage SDK keys"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "List SDK keys",
+        "tags": [
+          "Management API"
+        ]
+      },
+      "post": {
+        "description": "`kind` is public or secret, and `environment` is production, staging or development. A public key needs at least one allowed origin; a secret key may have none. The response carries `secret` in full, once.",
+        "operationId": "issueSdkKey",
+        "parameters": [
+          {
+            "description": "The organization to issue into",
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "allowed_origins": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "environment": {
+                    "description": "production, staging or development",
+                    "type": "string"
+                  },
+                  "expires_at": {
+                    "format": "date-time",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "kind": {
+                    "description": "public or secret",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "What the key is called. The only part a person can recognise once the secret is masked",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "environment",
+                  "kind",
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuedSDKKeyOut"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The management key's role does not allow this"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The key could not be issued as described"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Issue an SDK key",
+        "tags": [
+          "Management API"
+        ]
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/sdk-keys/{sdk_key_id}/origins": {
+      "put": {
+        "description": "Replaces the whole list. An origin is a scheme, a host and an optional port. An empty list refuses every browser request.",
+        "operationId": "replacePublicKeyAllowedOrigins",
+        "parameters": [
+          {
+            "description": "The organization the key belongs to",
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The key to re-scope",
+            "in": "path",
+            "name": "sdk_key_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "allowed_origins": {
+                    "description": "Scheme and host, no path. Empty refuses everything",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "allowed_origins"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SDKKeyOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The management key's role does not allow this"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The key is revoked"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An origin is not valid, or the key is secret"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Replace a public key's allowed origins",
+        "tags": [
+          "Management API"
+        ]
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/sdk-keys/{sdk_key_id}/revoke": {
+      "post": {
+        "description": "Refuses the key from the next request on. There is no un-revoke.",
+        "operationId": "revokeSdkKey",
+        "parameters": [
+          {
+            "description": "The organization the key belongs to",
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The key to act on",
+            "in": "path",
+            "name": "sdk_key_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SDKKeyOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The management key's role does not allow this"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The key is already revoked"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Revoke an SDK key",
+        "tags": [
+          "Management API"
+        ]
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/sdk-keys/{sdk_key_id}/risk-weights": {
+      "get": {
+        "description": "A platform the key has not overridden answers with the organization's values and `stored` false.",
+        "operationId": "readSdkKeyRiskWeights",
+        "parameters": [
+          {
+            "description": "The organization the key belongs to",
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The key whose weights these are",
+            "in": "path",
+            "name": "sdk_key_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskWeightsOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The management key's role does not allow this"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Read an SDK key's risk weights",
+        "tags": [
+          "Management API"
+        ]
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/sdk-keys/{sdk_key_id}/risk-weights/{platform}": {
+      "delete": {
+        "description": "The key follows the organization's profile again.",
+        "operationId": "removeSdkKeyRiskWeightsPlatform",
+        "parameters": [
+          {
+            "description": "The organization the key belongs to",
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The key whose override is being removed",
+            "in": "path",
+            "name": "sdk_key_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "web, android or ios",
+            "in": "path",
+            "name": "platform",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskWeightsPlatformOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Only an admin key may change risk weights"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Remove an SDK key's risk weights for a platform",
+        "tags": [
+          "Management API"
+        ]
+      },
+      "put": {
+        "description": "Overrides the organization's profile for this key alone.",
+        "operationId": "saveSdkKeyRiskWeightsPlatform",
+        "parameters": [
+          {
+            "description": "The organization the key belongs to",
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The key whose weights these are",
+            "in": "path",
+            "name": "sdk_key_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "web, android or ios",
+            "in": "path",
+            "name": "platform",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "residential_proxy_weights_mode": {
+                    "description": "method or confidence",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "revision": {
+                    "description": "The revision this edit was made against",
+                    "format": "int64",
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "suspect_threshold": {
+                    "description": "The score at which a request is called suspicious",
+                    "format": "int64",
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "vpn_weights_mode": {
+                    "description": "method or confidence",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "weights": {
+                    "additionalProperties": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "description": "Signal name to weight, 0-10000",
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskWeightsPlatformOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Only an admin key may change risk weights"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The weights changed since they were read"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "A weight, a mode or the threshold is not usable"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Save an SDK key's risk weights for a platform",
+        "tags": [
+          "Management API"
+        ]
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/webhook-deliveries": {
+      "get": {
+        "operationId": "listWebhookDeliveryAttempts",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "environment",
+            "schema": {
+              "default": "all",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": "50",
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDeliveriesOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The management key's role does not allow this"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "List webhook delivery attempts",
+        "tags": [
+          "Management API"
+        ]
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/webhooks": {
+      "get": {
+        "operationId": "listWebhookEndpoints",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhooksOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The management key's role does not allow this"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "List webhook endpoints",
+        "tags": [
+          "Management API"
+        ]
+      },
+      "post": {
+        "description": "The response carries the signing secret in full, once.",
+        "operationId": "createWebhookEndpoint",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "description": {
+                    "type": "string"
+                  },
+                  "environment": {
+                    "type": "string"
+                  },
+                  "events": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "url": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "description",
+                  "environment",
+                  "events",
+                  "url"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedWebhookOut"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The management key's role does not allow this"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Create a webhook endpoint",
+        "tags": [
+          "Management API"
+        ]
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/webhooks/{webhook_id}": {
+      "delete": {
+        "operationId": "deleteWebhookEndpoint",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The management key's role does not allow this"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Delete a webhook endpoint",
+        "tags": [
+          "Management API"
+        ]
+      },
+      "patch": {
+        "description": "Send only the fields to change. `paused` pauses or resumes the endpoint.",
+        "operationId": "updateWebhookEndpoint",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "description": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "environment": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "events": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "paused": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "url": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpointOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The management key's role does not allow this"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Update a webhook endpoint",
+        "tags": [
+          "Management API"
+        ]
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/webhooks/{webhook_id}/redeliver": {
+      "post": {
+        "operationId": "redeliverEventWebhookEndpoint",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "event_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "event_id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The management key's role does not allow this"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Redeliver an event to a webhook endpoint",
+        "tags": [
+          "Management API"
+        ]
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/webhooks/{webhook_id}/rotate-secret": {
+      "post": {
+        "description": "The new secret is returned once. The previous secret keeps signing deliveries for `previous_secret_valid_hours`, 24 by default and at most 168.",
+        "operationId": "rotateWebhookEndpointSigningSecret",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "previous_secret_valid_hours": {
+                    "format": "int64",
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedWebhookOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The management key's role does not allow this"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Rotate a webhook endpoint's signing secret",
+        "tags": [
+          "Management API"
+        ]
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/webhooks/{webhook_id}/test": {
+      "post": {
+        "operationId": "sendTestEventWebhookEndpoint",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookTestOut"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The management key's role does not allow this"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Send a test event to a webhook endpoint",
+        "tags": [
+          "Management API"
+        ]
+      }
+    },
+    "/api/v1/management/signals/catalogue": {
+      "get": {
+        "description": "Every signal group and the signals in it, with the platforms each applies to. The vocabulary the weights routes are written in.",
+        "operationId": "listSignals",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignalCatalogueOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The management key's role does not allow this"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "List signals",
+        "tags": [
+          "Management API"
+        ]
+      }
+    }
+  },
+  "servers": [
+    {
+      "description": "United States",
+      "url": "https://us.api.fingerly.io"
+    },
+    {
+      "description": "European Union (coming soon)",
+      "url": "https://eu.api.fingerly.io"
+    }
+  ],
+  "tags": [
+    {
+      "description": "Called by the client SDKs with a public key. Most integrations never call these directly.",
+      "name": "Client API"
+    },
+    {
+      "description": "Read identification events from your backend with a secret key.",
+      "name": "Server API"
+    },
+    {
+      "description": "Manage SDK keys, proxy keys, webhook endpoints and risk weights with a management key.",
+      "name": "Management API"
+    }
+  ]
+}

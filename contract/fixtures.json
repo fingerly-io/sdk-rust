@@ -1,0 +1,236 @@
+{
+  "responses": [
+    {
+      "body": {
+        "request_id": "0199a963-e400-7000-8000-000000000001",
+        "visitor_id": "visitor-test",
+        "occurred_at": "2026-09-17T12:00:00Z",
+        "state": "enriched",
+        "environment": "development",
+        "platform": "web",
+        "sdk_platform": "web",
+        "sdk_version": "0.1.0",
+        "ip_address": "203.0.113.10",
+        "suspect_score": 0,
+        "suspect_level": "low",
+        "triggers": [],
+        "has_document": false
+      },
+      "name": "event",
+      "schema": "SDKEventOut",
+      "status": 200
+    },
+    {
+      "body": {
+        "request_id": "0199a963-e400-7000-8000-000000000001",
+        "visitor_id": "visitor-test",
+        "occurred_at": "2026-09-17T12:00:00Z",
+        "state": "unavailable",
+        "environment": "development",
+        "platform": "web",
+        "sdk_platform": "web",
+        "sdk_version": "0.1.0",
+        "ip_address": "203.0.113.10",
+        "suspect_score": null,
+        "triggers": [],
+        "has_document": false
+      },
+      "name": "unavailable",
+      "schema": "SDKEventOut",
+      "status": 200
+    },
+    {
+      "body": {
+        "request_id": "0199a963-e400-7000-8000-000000000001",
+        "visitor_id": "visitor-test",
+        "occurred_at": "2026-09-17T12:00:00Z",
+        "state": "enriched",
+        "environment": "development",
+        "platform": "web",
+        "sdk_platform": "web",
+        "sdk_version": "0.1.0",
+        "ip_address": "203.0.113.10",
+        "suspect_score": 0,
+        "suspect_level": "low",
+        "triggers": [],
+        "has_document": true,
+        "document": {
+          "schema": 1,
+          "request_id": "0199a963-e400-7000-8000-000000000001",
+          "occurred_at": "2026-09-17T12:00:00Z",
+          "organization_id": "tenant-test",
+          "sdk_key_id": "",
+          "environment": "development",
+          "sdk": {
+            "platform": "",
+            "version": ""
+          },
+          "client_ip": "203.0.113.10",
+          "signals": null
+        },
+        "deferred_signals": {
+          "fonts": {
+            "status": "ok",
+            "value": [
+              "Arial"
+            ]
+          }
+        }
+      },
+      "name": "archived",
+      "schema": "SDKEventOut",
+      "status": 200
+    },
+    {
+      "body": {
+        "rows": [
+          {
+            "request_id": "0199a963-e400-7000-8000-000000000001",
+            "visitor_id": "visitor-test",
+            "occurred_at": "2026-09-17T12:00:00Z",
+            "state": "enriched",
+            "environment": "development",
+            "platform": "web",
+            "sdk_platform": "web",
+            "sdk_version": "0.1.0",
+            "ip_address": "203.0.113.10",
+            "suspect_score": 0,
+            "suspect_level": "low",
+            "triggers": [],
+            "has_document": false
+          }
+        ],
+        "page": 2,
+        "page_size": 20
+      },
+      "name": "page",
+      "schema": "SDKEventsOut",
+      "status": 200
+    },
+    {
+      "body": {
+        "rows": [],
+        "page": 1,
+        "page_size": 50
+      },
+      "name": "empty_page",
+      "schema": "SDKEventsOut",
+      "status": 200
+    },
+    {
+      "body": {
+        "error": {
+          "code": "event_not_found",
+          "details": [
+            {
+              "field": "request_id",
+              "issue": "invalid",
+              "location": "path"
+            }
+          ],
+          "message": "Synthetic contract error",
+          "status": 404
+        },
+        "request_id": "trace-test"
+      },
+      "name": "not_found",
+      "schema": "ErrorResponse",
+      "status": 404
+    },
+    {
+      "body": {
+        "error": {
+          "code": "unauthorized",
+          "details": [
+            {
+              "field": "request_id",
+              "issue": "invalid",
+              "location": "path"
+            }
+          ],
+          "message": "Synthetic contract error",
+          "status": 401
+        },
+        "request_id": "trace-test"
+      },
+      "name": "unauthorized",
+      "schema": "ErrorResponse",
+      "status": 401
+    },
+    {
+      "body": {
+        "error": {
+          "code": "invalid_request_id",
+          "details": [
+            {
+              "field": "request_id",
+              "issue": "invalid",
+              "location": "path"
+            }
+          ],
+          "message": "Synthetic contract error",
+          "status": 422
+        },
+        "request_id": "trace-test"
+      },
+      "name": "invalid",
+      "schema": "ErrorResponse",
+      "status": 422
+    },
+    {
+      "body": {
+        "error": {
+          "code": "rate_limit_exceeded",
+          "details": [
+            {
+              "field": "request_id",
+              "issue": "invalid",
+              "location": "path"
+            }
+          ],
+          "message": "Synthetic contract error",
+          "status": 429
+        },
+        "request_id": "trace-test"
+      },
+      "name": "rate_limit",
+      "schema": "ErrorResponse",
+      "status": 429
+    }
+  ],
+  "schema": 1,
+  "webhooks": [
+    {
+      "name": "current",
+      "payload": "{\"id\":\"evt_contract\",\"type\":\"identification.completed\",\"data\":{\"request_id\":\"0199a963-e400-7000-8000-000000000001\"}}",
+      "secret": "whsec_contract_current",
+      "signature": "sha256=f222a3199dae906df4608030c73d742410e40f003bd7b25292db11edb306b9d4",
+      "timestamp": "1789646400",
+      "valid": true
+    },
+    {
+      "name": "rotation_current",
+      "payload": "{\"id\":\"evt_contract\",\"type\":\"identification.completed\",\"data\":{\"request_id\":\"0199a963-e400-7000-8000-000000000001\"}}",
+      "secret": "whsec_contract_current",
+      "signature": "sha256=f222a3199dae906df4608030c73d742410e40f003bd7b25292db11edb306b9d4,sha256=4d373c753341ff05adb96484a1ff629204fffb1889582a7ac905d61c60de35b5",
+      "timestamp": "1789646400",
+      "valid": true
+    },
+    {
+      "name": "rotation_previous",
+      "payload": "{\"id\":\"evt_contract\",\"type\":\"identification.completed\",\"data\":{\"request_id\":\"0199a963-e400-7000-8000-000000000001\"}}",
+      "secret": "whsec_contract_previous",
+      "signature": "sha256=f222a3199dae906df4608030c73d742410e40f003bd7b25292db11edb306b9d4,sha256=4d373c753341ff05adb96484a1ff629204fffb1889582a7ac905d61c60de35b5",
+      "timestamp": "1789646400",
+      "valid": true
+    },
+    {
+      "name": "tampered",
+      "payload": "{\"id\":\"evt_contract\",\"type\":\"identification.completed\",\"data\":{\"request_id\":\"0199a963-e400-7000-8000-000000000001\"}} ",
+      "secret": "whsec_contract_current",
+      "signature": "sha256=f222a3199dae906df4608030c73d742410e40f003bd7b25292db11edb306b9d4",
+      "timestamp": "1789646400",
+      "valid": false
+    }
+  ]
+}
