@@ -1,0 +1,66 @@
+[package]
+name = "fingerly"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+description = "Server-side Fingerly SDK: event reads, webhook verification and a same-origin proxy for the browser SDK."
+repository = "https://github.com/fingerly-io/sdk-rust"
+homepage = "https://fingerly.io"
+documentation = "https://docs.fingerly.io/docs/sdks/rust"
+license = "Apache-2.0"
+keywords = ["fingerly", "fingerprint", "fraud", "device", "webhook"]
+categories = ["api-bindings", "web-programming::http-client"]
+readme = "README.md"
+# These exist for this repository's own CI. A published crate has no use for
+# 110 KB of OpenAPI, and the contract tests would fail without it.
+exclude = ["/contract", "/tests", "/examples/sync_contract.rs", "/.github"]
+
+[features]
+default = ["client", "proxy", "rustls"]
+# Event reads over HTTP. Turn it off for a webhook-only build, which then needs
+# neither an HTTP stack nor an async runtime.
+client = ["dep:reqwest", "dep:tokio", "dep:url", "dep:percent-encoding"]
+# The same-origin proxy, as a tower::Service over http types.
+proxy = ["client", "dep:http", "dep:http-body", "dep:http-body-util", "dep:bytes", "dep:tower-service"]
+# TLS backend. Pick exactly one; rustls is the default.
+rustls = ["reqwest?/rustls"]
+native-tls = ["reqwest?/native-tls"]
+# Typed timestamps: OffsetDateTime accessors on events and list windows.
+time = ["dep:time"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+hmac = "0.12"
+sha2 = "0.10"
+subtle = "2.6"
+
+reqwest = { version = "0.13", default-features = false, features = ["http2", "charset", "gzip"], optional = true }
+tokio = { version = "1", default-features = false, features = ["time"], optional = true }
+url = { version = "2.5", optional = true }
+percent-encoding = { version = "2.3", optional = true }
+
+http = { version = "1", optional = true }
+http-body = { version = "1", optional = true }
+http-body-util = { version = "0.1", optional = true }
+bytes = { version = "1", optional = true }
+tower-service = { version = "0.3", optional = true }
+
+time = { version = "0.3", default-features = false, features = ["parsing", "formatting"], optional = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time", "sync"] }
+axum = "0.8"
+reqwest = { version = "0.13", default-features = false, features = ["http2", "charset", "gzip"] }
+http = "1"
+flate2 = "1"
+http-body-util = "0.1"
+bytes = "1"
+hmac = "0.12"
+sha2 = "0.10"
+serde_json = "1.0"
+time = { version = "0.3", default-features = false, features = ["parsing", "formatting", "macros"] }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
