@@ -185,11 +185,14 @@ fn matches(candidate: &str, expected: &[u8; 32]) -> bool {
 /// Decodes a lowercase hex digest. Uppercase is refused rather than accepted,
 /// because Fingerly never sends it and a lenient parser is one more shape to
 /// reason about.
+///
+/// The caller has already checked the length, so the pairs line up with the
+/// output exactly.
 fn decode_hex(value: &str) -> Option<[u8; 32]> {
     let bytes = value.as_bytes();
     let mut out = [0u8; 32];
-    for (index, pair) in bytes.chunks_exact(2).enumerate() {
-        out[index] = (nibble(pair[0])? << 4) | nibble(pair[1])?;
+    for (index, slot) in out.iter_mut().enumerate() {
+        *slot = (nibble(bytes[index * 2])? << 4) | nibble(bytes[index * 2 + 1])?;
     }
     Some(out)
 }

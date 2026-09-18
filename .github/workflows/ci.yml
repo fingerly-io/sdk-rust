@@ -11,6 +11,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      # Both results are wanted: a lint stable has and 1.88 does not must not
+      # cancel the run that proves the floor still builds.
+      fail-fast: false
       matrix:
         # 1.88 is the supported floor; stable guards against drift.
         rust: ["1.88", "stable"]
