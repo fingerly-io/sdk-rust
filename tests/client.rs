@@ -5,7 +5,7 @@ mod common;
 use std::time::Duration;
 
 use common::{event_body, Canned, TestServer, PUBLIC_KEY, SECRET_KEY};
-use fingerly::{Error, Fingerly, Operation};
+use fingerly::{Error, Fingerly};
 
 /// Builds a client pointed at a test server.
 fn client(server: &TestServer) -> Fingerly {
@@ -232,12 +232,7 @@ async fn times_out_a_response_that_never_finishes() {
         .unwrap_err();
 
     assert!(error.is_timeout(), "got {error:?}");
-    assert!(matches!(
-        error,
-        Error::Timeout {
-            operation: Operation::Request
-        }
-    ));
+    assert!(matches!(error, Error::Timeout));
 }
 
 /// An unreachable API is a connection failure, not a malformed response.

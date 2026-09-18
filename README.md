@@ -37,8 +37,7 @@ server that answers and then stalls times out like one that never answered. It
 defaults to 5 seconds and is set with `.timeout(…)` on the builder.
 
 Cancellation is ordinary Rust cancellation: drop the future and the request
-stops, including the polling in `wait_for`. There is no separate cancellation
-token to thread through.
+stops. There is no separate cancellation token to thread through.
 
 ## Errors
 
@@ -48,7 +47,7 @@ Every call returns `fingerly::Result<T>`, whose error is one `Error` enum:
 | --- | --- |
 | `Config` | An option was rejected. Nothing was sent, and a retry will not help. |
 | `Api` | The API answered with a non-2xx status. |
-| `Timeout` | An SDK deadline elapsed; `operation` says which. |
+| `Timeout` | The request deadline elapsed. |
 | `Connection` | The API could not be reached, or the connection failed mid-response. |
 | `Decode` | The body was not the JSON this SDK expects. |
 
@@ -59,13 +58,13 @@ echoed into a message.
 ```rust
 match fingerly.events().get(&request_id).await {
     Ok(event) => { /* … */ }
-    Err(error) if error.is_event_not_found() => { /* not archived yet */ }
+    Err(error) if error.is_event_not_found() => { /* no such request id */ }
     Err(error) if error.status() == Some(429) => { /* back off */ }
     Err(error) => return Err(error),
 }
 ```
 
-The one retryable read failure has a predicate, so it needs no status check:
+A missing event has a predicate, so it needs no status-and-code check:
 `error.is_event_not_found()`.
 
 ## Unscored events
@@ -85,26 +84,21 @@ let Some(score) = event.score() else {
 `Event::raw` and `EventPage::raw` keep the response body exactly as it arrived,
 so a field the API adds later is reachable without an SDK upgrade.
 
-## Wait for a fresh identification
+## Read an event you just identified
 
-Identification answers before the event is archived, so reach for this only
-when you have just identified a visitor:
+An event is readable as soon as identification answers, so this needs nothing
+special:
 
 ```rust
-use fingerly::WaitOptions;
-use std::time::Duration;
-
-let event = fingerly
-    .events()
-    .wait_for(&request_id, WaitOptions::new()
-        .timeout(Duration::from_secs(10))
-        .interval(Duration::from_millis(250)))
-    .await?;
+let event = fingerly.events().get(&request_id).await?;
 ```
 
-Only `event_not_found` is retried; every other failure returns at once. When
-the event is still missing at the deadline the error is `Error::Timeout` with
-`Operation::EventWait`.
+Earlier versions had a `wait_for` that polled through the gap between
+identification and the event becoming queryable. There is no gap, so
+`is_event_not_found()` now means a request id that was never issued.
+
+The archived `document` arrives moments after the event itself, so check
+`has_document` rather than assuming it is there.
 
 ## Verify a backend action
 

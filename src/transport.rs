@@ -5,7 +5,7 @@ use std::time::Duration;
 use crate::config::{
     normalize_api_version, normalize_origin, parse_key, positive_duration, regional_origin, KeyKind,
 };
-use crate::errors::{ApiError, Error, Operation, Result};
+use crate::errors::{ApiError, Error, Result};
 
 /// The SDK build that made the request, sent on every call.
 pub(crate) const USER_AGENT: &str = concat!("fingerly-rust/", env!("CARGO_PKG_VERSION"));
@@ -85,9 +85,7 @@ impl Transport {
         let request = self.http.get(format!("{}{path}", self.base_url));
         match tokio::time::timeout(self.timeout, self.send(request)).await {
             Ok(result) => result,
-            Err(_) => Err(Error::Timeout {
-                operation: Operation::Request,
-            }),
+            Err(_) => Err(Error::Timeout),
         }
     }
 

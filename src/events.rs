@@ -1,18 +1,13 @@
 //! Event reads and the bounded polling loop.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use serde::Deserialize;
 
-use crate::config::positive_duration;
-use crate::errors::{Error, Operation, Result};
+use crate::errors::{Error, Result};
 use crate::models::{Event, EventPage, SuspectLevel};
 use crate::transport::Transport;
-
-const DEFAULT_WAIT_TIMEOUT: Duration = Duration::from_secs(10);
-const DEFAULT_POLL_INTERVAL: Duration = Duration::from_millis(250);
 
 /// Everything outside the unreserved set is escaped, so a request id can never
 /// add a path segment, a query or a fragment of its own.
@@ -145,41 +140,6 @@ impl EventListParams {
     }
 }
 
-/// How long [`EventsClient::wait_for`] polls, and how often.
-#[derive(Clone, Copy, Debug)]
-pub struct WaitOptions {
-    timeout: Duration,
-    interval: Duration,
-}
-
-impl Default for WaitOptions {
-    fn default() -> Self {
-        WaitOptions {
-            timeout: DEFAULT_WAIT_TIMEOUT,
-            interval: DEFAULT_POLL_INTERVAL,
-        }
-    }
-}
-
-impl WaitOptions {
-    /// The defaults: 10 seconds in total, polling every 250ms.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Total time to wait for the event.
-    pub fn timeout(mut self, value: Duration) -> Self {
-        self.timeout = value;
-        self
-    }
-
-    /// Delay between polls.
-    pub fn interval(mut self, value: Duration) -> Self {
-        self.interval = value;
-        self
-    }
-}
-
 /// Reads events stored for the organisation and environment of the secret key.
 ///
 /// Reached as [`Fingerly::events`]; it is never constructed directly.
@@ -197,9 +157,9 @@ impl EventsClient {
 
     /// Fetches one event by request id.
     ///
-    /// An event that has not been archived yet fails with an error for which
-    /// [`Error::is_event_not_found`] is true; use [`EventsClient::wait_for`]
-    /// right after identifying a visitor.
+    /// An event is readable as soon as identification answers, so an error for
+    /// which [`Error::is_event_not_found`] is true means a request id that was
+    /// never issued rather than one that has not landed yet.
     pub async fn get(&self, request_id: &str) -> Result<Event> {
         let path = format!("/events/{}", utf8_percent_encode(request_id, PATH_SEGMENT));
         let body = self.transport.get_json(&path).await?;
@@ -225,37 +185,6 @@ impl EventsClient {
             .get_json(&format!("/events{}", params.query()?))
             .await?;
         decode(body, "events")
-    }
-
-    /// Polls until a newly identified event becomes readable.
-    ///
-    /// Identification answers before the event is archived, so reach for this
-    /// only when you have just identified a visitor. Only a structured
-    /// `404 event_not_found` is retried; every other failure propagates at
-    /// once.
-    ///
-    /// When the event is still missing at the deadline the error is
-    /// [`Error::Timeout`] with [`Operation::EventWait`].
-    pub async fn wait_for(&self, request_id: &str, options: WaitOptions) -> Result<Event> {
-        let timeout = positive_duration(options.timeout, "timeout")?;
-        let interval = positive_duration(options.interval, "interval")?;
-
-        let poll = async {
-            loop {
-                match self.get(request_id).await {
-                    Ok(event) => return Ok(event),
-                    Err(error) if error.is_event_not_found() => {}
-                    Err(error) => return Err(error),
-                }
-                tokio::time::sleep(interval).await;
-            }
-        };
-        match tokio::time::timeout(timeout, poll).await {
-            Ok(result) => result,
-            Err(_) => Err(Error::Timeout {
-                operation: Operation::EventWait,
-            }),
-        }
     }
 }
 

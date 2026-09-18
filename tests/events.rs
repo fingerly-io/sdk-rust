@@ -5,7 +5,7 @@ mod common;
 use std::time::Duration;
 
 use common::{event_body, not_found_body, Canned, TestServer, SECRET_KEY};
-use fingerly::{Error, EventListParams, Fingerly, Operation, SuspectLevel, WaitOptions};
+use fingerly::{Error, EventListParams, Fingerly, SuspectLevel};
 
 fn client(server: &TestServer) -> Fingerly {
     Fingerly::builder(SECRET_KEY)
@@ -150,127 +150,47 @@ async fn refuses_a_page_or_limit_of_zero() {
     assert_eq!(server.request_count(), 0, "an invalid filter was sent");
 }
 
-/// Identification answers before the event is archived, so the one retryable
-/// failure is polled through.
+/// An event is readable as soon as identification answers, so a missing one is
+/// a request id that was never issued. There is nothing to wait for, and one
+/// call makes exactly one request.
 #[tokio::test]
-async fn polls_until_the_event_lands() {
-    let server = TestServer::start(vec![
-        Canned::json(404, not_found_body()),
-        Canned::json(404, not_found_body()),
-        Canned::json(200, event_body("req_1")),
-    ])
-    .await;
-
-    let event = client(&server)
-        .events()
-        .wait_for(
-            "req_1",
-            WaitOptions::new().interval(Duration::from_millis(5)),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(event.request_id, "req_1");
-    assert_eq!(server.request_count(), 3);
-}
-
-/// Only `404 event_not_found` is retried; everything else propagates at once.
-#[tokio::test]
-async fn stops_polling_on_any_other_failure() {
-    let server = TestServer::always(Canned::json(
-        403,
-        r#"{"error":{"code":"forbidden","message":"no","status":403}}"#,
-    ))
-    .await;
-
-    let error = client(&server)
-        .events()
-        .wait_for(
-            "req_1",
-            WaitOptions::new().interval(Duration::from_millis(5)),
-        )
-        .await
-        .unwrap_err();
-
-    assert_eq!(error.status(), Some(403));
-    assert_eq!(server.request_count(), 1);
-}
-
-/// A plain 404 without the structured code is not the retryable one.
-#[tokio::test]
-async fn does_not_poll_on_an_unstructured_404() {
-    let server = TestServer::always(Canned::json(404, "not json at all")).await;
-
-    let error = client(&server)
-        .events()
-        .wait_for(
-            "req_1",
-            WaitOptions::new().interval(Duration::from_millis(5)),
-        )
-        .await
-        .unwrap_err();
-
-    assert_eq!(error.status(), Some(404));
-    assert!(!error.is_event_not_found());
-    assert_eq!(server.request_count(), 1);
-}
-
-#[tokio::test]
-async fn gives_up_at_the_wait_deadline() {
+async fn reports_a_missing_event_rather_than_waiting_for_one() {
     let server = TestServer::always(Canned::json(404, not_found_body())).await;
 
-    let error = client(&server)
-        .events()
-        .wait_for(
-            "req_1",
-            WaitOptions::new()
-                .timeout(Duration::from_millis(120))
-                .interval(Duration::from_millis(5)),
-        )
-        .await
-        .unwrap_err();
+    let error = client(&server).events().get("req_1").await.unwrap_err();
 
-    assert!(error.is_timeout());
-    assert!(matches!(
-        error,
-        Error::Timeout {
-            operation: Operation::EventWait
-        }
-    ));
+    assert!(error.is_event_not_found(), "got {error:?}");
+    assert_eq!(server.request_count(), 1, "the read was retried");
 }
 
+/// Every other failure is one request too, whatever it is.
 #[tokio::test]
-async fn refuses_a_wait_that_could_never_poll() {
-    let server = TestServer::always(Canned::json(200, event_body("req_1"))).await;
-    let fingerly = client(&server);
+async fn never_retries_whatever_comes_back() {
+    for status in [400, 401, 403, 429, 500] {
+        let server = TestServer::always(Canned::json(
+            status,
+            r#"{"error":{"code":"other","message":"no","status":0}}"#,
+        ))
+        .await;
 
-    for options in [
-        WaitOptions::new().timeout(Duration::ZERO),
-        WaitOptions::new().interval(Duration::ZERO),
-    ] {
-        let error = fingerly
-            .events()
-            .wait_for("req_1", options)
-            .await
-            .unwrap_err();
-        assert!(matches!(error, Error::Config { .. }), "got {error:?}");
+        let error = client(&server).events().get("req_1").await.unwrap_err();
+        assert_eq!(error.status(), Some(status));
+        assert_eq!(server.request_count(), 1, "HTTP {status} was retried");
     }
-    assert_eq!(server.request_count(), 0);
 }
 
 /// A caller cancels by dropping the future; nothing else is needed.
 #[tokio::test]
-async fn dropping_the_future_stops_the_wait() {
-    let server = TestServer::always(Canned::json(404, not_found_body())).await;
+async fn dropping_the_future_stops_the_read() {
+    let server =
+        TestServer::always(Canned::json(200, event_body("req_1")).delay(Duration::from_secs(30)))
+            .await;
     let fingerly = client(&server);
 
     {
-        let waiting = fingerly.events().wait_for(
-            "req_1",
-            WaitOptions::new().interval(Duration::from_millis(5)),
-        );
+        let reading = fingerly.events().get("req_1");
         tokio::select! {
-            _ = waiting => panic!("the event should never have landed"),
+            _ = reading => panic!("the read should not have finished"),
             _ = tokio::time::sleep(Duration::from_millis(40)) => {}
         }
     }
@@ -280,7 +200,7 @@ async fn dropping_the_future_stops_the_wait() {
     assert_eq!(
         server.request_count(),
         seen,
-        "polling continued after the drop"
+        "work continued after the drop"
     );
 }
 

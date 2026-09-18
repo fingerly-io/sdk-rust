@@ -57,12 +57,12 @@ mod webhooks;
 pub use crate::client::{Fingerly, FingerlyBuilder};
 #[cfg(feature = "client")]
 #[cfg_attr(docsrs, doc(cfg(feature = "client")))]
-pub use crate::events::{EventListParams, EventsClient, WaitOptions};
+pub use crate::events::{EventListParams, EventsClient};
 #[cfg(feature = "proxy")]
 #[cfg_attr(docsrs, doc(cfg(feature = "proxy")))]
 pub use crate::proxy::{ClientIpFn, FingerlyProxy, FingerlyProxyBuilder};
 
-pub use crate::errors::{ApiError, Error, Operation, Result};
+pub use crate::errors::{ApiError, Error, Result};
 pub use crate::models::{Event, EventPage, EventTrigger, SuspectLevel};
 pub use crate::webhooks::{
     verify_webhook, WebhookEvent, WebhookVerifier, DEFAULT_WEBHOOK_TOLERANCE,
