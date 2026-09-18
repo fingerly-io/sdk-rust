@@ -1,0 +1,55 @@
+name: Rust SDK
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # 1.88 is the supported floor; stable guards against drift.
+        rust: ["1.88", "stable"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --locked --all-features --all-targets -- -D warnings
+      - run: cargo test --locked --all-features
+      # The webhook-only build must need neither an HTTP stack nor a runtime.
+      - run: cargo test --locked --no-default-features --test webhooks
+      # Every feature has to stand on its own, not only in the default set.
+      - run: cargo check --locked --no-default-features
+      - run: cargo check --locked --no-default-features --features client,rustls
+      - run: cargo check --locked --no-default-features --features proxy,native-tls
+      - run: cargo check --locked --no-default-features --features time
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      # docs.rs builds with the same flags, so a broken intra-doc link is
+      # caught here rather than after publishing.
+      - run: cargo doc --locked --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: --cfg docsrs -D warnings
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # The published crate must build without the vendored contract snapshot,
+      # which is excluded from it.
+      - run: cargo package --locked --all-features
