@@ -178,8 +178,8 @@ async fn handle(State(shared): State<Shared>, request: Request) -> Response {
 
     let canned = {
         let mut queue = shared.responses.lock().unwrap();
-        // Keep the last answer in place, so a polling test can stop queueing
-        // once it has said what it wants to say.
+        // Keep the last answer in place, so a test that makes several
+        // requests can stop queueing once it has said what it wants to say.
         if queue.len() > 1 {
             queue.pop_front()
         } else {

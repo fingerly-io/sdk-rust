@@ -241,7 +241,7 @@ bump from silently raising it.
 
 `client.rs` holds `Fingerly` and its builder. `transport.rs` performs
 authenticated requests and maps failures to `Error::Api`. `events.rs` owns the
-event reads, the list filters and the polling loop; `models.rs` owns the types
+event reads and the list filters; `models.rs` owns the types
 they decode into. `webhooks.rs` verifies signatures and needs nothing else in
 the crate. `proxy.rs` is the same-origin service. `config.rs` validates every
 caller-supplied option: keys, origins, API versions, mount paths and durations,

@@ -1,4 +1,4 @@
-//! Event reads, the list filters, and the polling loop.
+//! Event reads and the list filters.
 
 mod common;
 

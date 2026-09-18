@@ -1,4 +1,4 @@
-//! Event reads and the bounded polling loop.
+//! Event reads and the list filters.
 
 use std::sync::Arc;
 

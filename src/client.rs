@@ -53,7 +53,7 @@ impl Fingerly {
         }
     }
 
-    /// Event reads and bounded polling under this client's secret key.
+    /// Event reads under this client's secret key.
     pub fn events(&self) -> &EventsClient {
         &self.events
     }
