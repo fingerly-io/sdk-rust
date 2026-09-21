@@ -40,38 +40,15 @@ impl KeyKind {
     }
 }
 
-/// The region and environment a key is scoped to.
+/// The environment a key is scoped to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct KeyScope {
-    /// `eu` or `us`; it selects the regional API host.
-    pub region: Region,
     /// The deployment the key belongs to. Keys never cross environments.
     pub environment: Environment,
 }
 
-/// Region encoded in every key.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Region {
-    Eu,
-    Us,
-}
-
-impl Region {
-    fn parse(value: &str) -> Option<Self> {
-        match value {
-            "eu" => Some(Region::Eu),
-            "us" => Some(Region::Us),
-            _ => None,
-        }
-    }
-
-    fn as_str(self) -> &'static str {
-        match self {
-            Region::Eu => "eu",
-            Region::Us => "us",
-        }
-    }
-}
+/// The one Fingerly API origin.
+pub(crate) const DEFAULT_ENDPOINT: &str = "https://api.fingerly.io";
 
 /// Deployment a key belongs to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -94,25 +71,21 @@ impl Environment {
 
 /// Parses a Fingerly key and asserts it is of the expected kind.
 ///
-/// The shape is `fly_{pk|sk|px}_{eu|us}_{environment}_{secret}`, where the
-/// secret is one or more of `A-Za-z0-9_-`. Splitting into exactly five parts
-/// leaves the secret's own underscores in the secret, where they belong.
+/// The shape is `fly_{pk|sk|px}_{environment}_{secret}`, where the secret is
+/// one or more of `A-Za-z0-9_-`. Splitting into exactly four parts leaves the
+/// secret's own underscores in the secret, where they belong.
 pub(crate) fn parse_key(key: &str, expected: KeyKind) -> Result<KeyScope> {
     let refuse = || {
         Error::config(format!(
-            "a valid regional Fingerly {} key is required",
+            "a valid Fingerly {} key is required",
             expected.label()
         ))
     };
 
-    let mut parts = key.splitn(5, '_');
-    let (Some("fly"), Some(kind), Some(region), Some(environment), Some(secret)) = (
-        parts.next(),
-        parts.next(),
-        parts.next(),
-        parts.next(),
-        parts.next(),
-    ) else {
+    let mut parts = key.splitn(4, '_');
+    let (Some("fly"), Some(kind), Some(environment), Some(secret)) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
         return Err(refuse());
     };
 
@@ -128,20 +101,10 @@ pub(crate) fn parse_key(key: &str, expected: KeyKind) -> Result<KeyScope> {
         return Err(refuse());
     }
 
-    let (Some(region), Some(environment)) =
-        (Region::parse(region), Environment::parse(environment))
-    else {
+    let Some(environment) = Environment::parse(environment) else {
         return Err(refuse());
     };
-    Ok(KeyScope {
-        region,
-        environment,
-    })
-}
-
-/// Returns the Fingerly API origin serving a key's region.
-pub(crate) fn regional_origin(scope: KeyScope) -> String {
-    format!("https://{}.api.fingerly.io", scope.region.as_str())
+    Ok(KeyScope { environment })
 }
 
 /// Normalises a caller-supplied API origin.

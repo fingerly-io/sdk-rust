@@ -59,6 +59,7 @@
           "request_id": "0199a963-e400-7000-8000-000000000001",
           "occurred_at": "2026-09-17T12:00:00Z",
           "organization_id": "tenant-test",
+          "project_id": "",
           "sdk_key_id": "",
           "environment": "development",
           "sdk": {

@@ -19,14 +19,13 @@ fn client(server: &TestServer) -> Fingerly {
 fn refuses_every_key_that_is_not_a_secret_key() {
     for key in [
         PUBLIC_KEY,
-        "fly_px_us_production_proxy",
-        "fly_mk_us_production_management",
-        "fly_sk_ap_production_wrongregion",
-        "fly_sk_us_testing_wrongenvironment",
-        "fly_sk_us_production_",
-        "fly_sk_us_production_has spaces",
-        "fly_sk_us_production_has\nnewline",
-        "sk_us_production_missingprefix",
+        "fly_px_production_proxy",
+        "fly_mk_production_management",
+        "fly_sk_testing_wrongenvironment",
+        "fly_sk_production_",
+        "fly_sk_production_has spaces",
+        "fly_sk_production_has\nnewline",
+        "sk_production_missingprefix",
         "",
     ] {
         let error = Fingerly::new(key).expect_err("this key should be refused");
@@ -38,11 +37,11 @@ fn refuses_every_key_that_is_not_a_secret_key() {
 }
 
 #[test]
-fn accepts_a_secret_key_for_either_region() {
+fn accepts_a_secret_key_for_every_environment() {
     for key in [
-        "fly_sk_us_production_abc",
-        "fly_sk_eu_staging_abc-DEF_123",
-        "fly_sk_eu_development_abc",
+        "fly_sk_production_abc",
+        "fly_sk_staging_abc-DEF_123",
+        "fly_sk_development_abc",
     ] {
         assert!(Fingerly::new(key).is_ok(), "{key} should be accepted");
     }

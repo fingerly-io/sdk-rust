@@ -17,7 +17,7 @@ use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
 
 use crate::config::{
     normalize_api_version, normalize_origin, normalize_prefix, parse_key, positive_duration,
-    regional_origin, KeyKind, KeyScope,
+    KeyKind, KeyScope, DEFAULT_ENDPOINT,
 };
 use crate::errors::{Error, Result};
 use crate::transport::USER_AGENT;
@@ -89,7 +89,7 @@ pub struct FingerlyProxy {
 struct ProxyInner {
     /// Server-held proxy key, or deprecated secret key, sent only to Fingerly.
     key: String,
-    /// The key's region and environment, matched against the browser's key.
+    /// The key's environment, matched against the browser's key.
     scope: KeyScope,
     /// Proxy keys authenticate the browser's public key; secret keys do not.
     uses_proxy_key: bool,
@@ -230,9 +230,8 @@ impl ProxyInner {
     /// Decides which key to present upstream.
     ///
     /// With a proxy key the browser must supply a public key for the same
-    /// region and environment, which the proxy forwards alongside its own. The
-    /// deprecated secret-key mode authenticates on its own and accepts
-    /// anything.
+    /// environment, which the proxy forwards alongside its own. The deprecated
+    /// secret-key mode authenticates on its own and accepts anything.
     fn upstream_key_for(&self, presented: Option<&str>) -> Option<String> {
         if !self.uses_proxy_key {
             return Some(self.key.clone());
@@ -450,7 +449,8 @@ impl FingerlyProxyBuilder {
         };
         let scope = parse_key(&key, kind)?;
 
-        let upstream = normalize_origin(&self.upstream.unwrap_or_else(|| regional_origin(scope)))?;
+        let upstream =
+            normalize_origin(&self.upstream.unwrap_or_else(|| DEFAULT_ENDPOINT.to_owned()))?;
         let api_version = normalize_api_version(self.api_version.as_deref().unwrap_or("v1"))?;
         let prefix = normalize_prefix(self.prefix.as_deref().unwrap_or(DEFAULT_PREFIX))?;
         let max_body_bytes = match self.max_body_bytes {

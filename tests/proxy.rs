@@ -220,8 +220,7 @@ async fn requires_a_matching_public_key_from_the_browser() {
         Some(""),
         Some(SECRET_KEY),
         Some(PROXY_KEY),
-        Some("fly_pk_eu_production_otherregion"),
-        Some("fly_pk_us_staging_otherenvironment"),
+        Some("fly_pk_staging_otherenvironment"),
         Some("not-a-key"),
     ] {
         let mut request = identify("/metrics/api/v1/identify");

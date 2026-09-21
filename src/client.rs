@@ -32,8 +32,7 @@ pub struct Fingerly {
 
 impl Fingerly {
     /// Builds a client for a server-only secret key,
-    /// `fly_sk_{eu|us}_{environment}_…`, whose prefix selects the regional API
-    /// and the environment read.
+    /// `fly_sk_{environment}_…`, whose prefix names the environment read.
     ///
     /// Every option is validated here, so an invalid key or endpoint fails at
     /// construction and nothing is sent.
@@ -70,8 +69,8 @@ pub struct FingerlyBuilder {
 }
 
 impl FingerlyBuilder {
-    /// Overrides the regional origin implied by the key, for a local or
-    /// self-hosted API. The key still decides which kind of key is accepted.
+    /// Overrides the Fingerly API origin, for a local or self-hosted API. The
+    /// key still decides which kind of key is accepted.
     pub fn endpoint(mut self, endpoint: impl Into<String>) -> Self {
         self.endpoint = Some(endpoint.into());
         self

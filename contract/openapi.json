@@ -374,9 +374,6 @@
             "description": "The organization every management route acts on",
             "type": "string"
           },
-          "region": {
-            "type": "string"
-          },
           "role": {
             "description": "admin or developer",
             "type": "string"
@@ -386,7 +383,6 @@
           "key_id",
           "name",
           "organization_id",
-          "region",
           "role"
         ],
         "type": "object"
@@ -426,9 +422,6 @@
           "prefix": {
             "type": "string"
           },
-          "region": {
-            "type": "string"
-          },
           "revoked_at": {
             "format": "date-time",
             "type": [
@@ -447,7 +440,6 @@
           "last4",
           "name",
           "prefix",
-          "region",
           "status"
         ],
         "type": "object"
@@ -773,11 +765,10 @@
             "type": "string"
           },
           "prefix": {
-            "description": "The human-readable stem, such as fly_pk_eu_production",
+            "description": "The human-readable stem, such as fly_pk_production",
             "type": "string"
           },
-          "region": {
-            "description": "Immutable data residency inherited from the organization",
+          "project_id": {
             "type": "string"
           },
           "revoked_at": {
@@ -804,7 +795,7 @@
           "last4",
           "name",
           "prefix",
-          "region",
+          "project_id",
           "status"
         ],
         "type": "object"
@@ -1113,19 +1104,19 @@
     },
     "securitySchemes": {
       "managementKey": {
-        "description": "A management key, fly_mk_{region}_…. Server-side only: refused with a browser Origin.",
+        "description": "A management key, fly_mk_…. Server-side only: refused with a browser Origin.",
         "in": "header",
         "name": "x-api-key",
         "type": "apiKey"
       },
       "publicKey": {
-        "description": "A public key, fly_pk_{region}_{environment}_…. Accepted from browsers only on its allowed origins.",
+        "description": "A public key, fly_pk_{environment}_…. Accepted from browsers only on its allowed origins.",
         "in": "header",
         "name": "x-api-key",
         "type": "apiKey"
       },
       "secretKey": {
-        "description": "A secret key, fly_sk_{region}_{environment}_…. Server-side only: refused with a browser Origin.",
+        "description": "A secret key, fly_sk_{environment}_…. Server-side only: refused with a browser Origin.",
         "in": "header",
         "name": "x-api-key",
         "type": "apiKey"
@@ -1138,7 +1129,7 @@
       "name": "Fingerly support",
       "url": "https://docs.fingerly.io"
     },
-    "description": "Identify visitors, read identification events and manage your integration. Every request is authenticated with a key in the `x-api-key` header, and every key belongs to one region: use that region's server. Guides and field-by-field reference: https://docs.fingerly.io",
+    "description": "Identify visitors, read identification events and manage your integration. Every request is authenticated with a key in the `x-api-key` header. Guides and field-by-field reference: https://docs.fingerly.io",
     "title": "Fingerly API",
     "version": "v1"
   },
@@ -1636,7 +1627,7 @@
     },
     "/api/v1/management/key": {
       "get": {
-        "description": "The organization, role and region of the key the request was made with. Every other management route names the organization in its path; read it here.",
+        "description": "The organization and role of the key the request was made with. Every other management route names the organization in its path; read it here.",
         "operationId": "describeManagementKey",
         "responses": {
           "200": {
@@ -2341,6 +2332,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "The project whose keys these are",
+            "in": "query",
+            "name": "project_id",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -2424,6 +2423,14 @@
             "in": "path",
             "name": "organization_id",
             "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The project to issue into",
+            "in": "query",
+            "name": "project_id",
             "schema": {
               "type": "string"
             }
@@ -2566,6 +2573,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "The project the key belongs to",
+            "in": "query",
+            "name": "project_id",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -2692,6 +2707,14 @@
             "in": "path",
             "name": "sdk_key_id",
             "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The project the key belongs to",
+            "in": "query",
+            "name": "project_id",
             "schema": {
               "type": "string"
             }
@@ -4069,12 +4092,8 @@
   },
   "servers": [
     {
-      "description": "United States",
-      "url": "https://us.api.fingerly.io"
-    },
-    {
-      "description": "European Union (coming soon)",
-      "url": "https://eu.api.fingerly.io"
+      "description": "Fingerly API",
+      "url": "https://api.fingerly.io"
     }
   ],
   "tags": [

@@ -1,9 +1,10 @@
-//! Authenticated JSON reads against one regional Fingerly API.
+//! Authenticated JSON reads against the Fingerly API.
 
 use std::time::Duration;
 
 use crate::config::{
-    normalize_api_version, normalize_origin, parse_key, positive_duration, regional_origin, KeyKind,
+    normalize_api_version, normalize_origin, parse_key, positive_duration, KeyKind,
+    DEFAULT_ENDPOINT,
 };
 use crate::errors::{ApiError, Error, Result};
 
@@ -20,7 +21,7 @@ const MAX_ERROR_BODY: usize = 1 << 20;
 /// redirects so the key is never replayed to another host, and reports
 /// failures as [`Error::Api`] without echoing the response body.
 pub(crate) struct Transport {
-    /// Versioned base URL, e.g. `https://us.api.fingerly.io/api/v1`.
+    /// Versioned base URL, e.g. `https://api.fingerly.io/api/v1`.
     base_url: String,
     /// Deadline covering both the request and reading its JSON body.
     timeout: Duration,
@@ -54,8 +55,8 @@ impl Transport {
         timeout: Option<Duration>,
         builder: Option<reqwest::ClientBuilder>,
     ) -> Result<Self> {
-        let scope = parse_key(&secret_key, KeyKind::Secret)?;
-        let origin = normalize_origin(&endpoint.unwrap_or_else(|| regional_origin(scope)))?;
+        parse_key(&secret_key, KeyKind::Secret)?;
+        let origin = normalize_origin(&endpoint.unwrap_or_else(|| DEFAULT_ENDPOINT.to_owned()))?;
         let api_version = normalize_api_version(api_version.as_deref().unwrap_or("v1"))?;
         let timeout = positive_duration(timeout.unwrap_or(DEFAULT_TIMEOUT), "timeout")?;
 

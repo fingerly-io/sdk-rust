@@ -18,9 +18,9 @@ use axum::Router;
 use http_body_util::BodyExt;
 
 /// A secret key of the right shape. It is not a credential for anything.
-pub const SECRET_KEY: &str = "fly_sk_us_production_testonlysecret";
-pub const PUBLIC_KEY: &str = "fly_pk_us_production_testonlypublic";
-pub const PROXY_KEY: &str = "fly_px_us_production_testonlyproxy";
+pub const SECRET_KEY: &str = "fly_sk_production_testonlysecret";
+pub const PUBLIC_KEY: &str = "fly_pk_production_testonlypublic";
+pub const PROXY_KEY: &str = "fly_px_production_testonlyproxy";
 pub const WEBHOOK_SECRET: &str = "whsec_testonly";
 
 /// One request the server saw.
