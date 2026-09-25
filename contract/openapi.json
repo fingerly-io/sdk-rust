@@ -218,6 +218,76 @@
         ],
         "type": "object"
       },
+      "HostedDomainOut": {
+        "properties": {
+          "activated_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "checked_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "hostname": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "problem": {
+            "description": "What is holding the certificate up, in the provider's words",
+            "type": "string"
+          },
+          "status": {
+            "description": "pending, active or failed",
+            "type": "string"
+          }
+        },
+        "required": [
+          "created_at",
+          "hostname",
+          "id",
+          "path",
+          "status"
+        ],
+        "type": "object"
+      },
+      "HostedDomainsOut": {
+        "properties": {
+          "available": {
+            "description": "Whether hosted domains can be added on this deployment",
+            "type": "boolean"
+          },
+          "domains": {
+            "items": {
+              "$ref": "#/components/schemas/HostedDomainOut"
+            },
+            "type": "array"
+          },
+          "target": {
+            "description": "What each hosted domain's CNAME points at",
+            "type": "string"
+          }
+        },
+        "required": [
+          "available",
+          "domains"
+        ],
+        "type": "object"
+      },
       "IdentifyIn": {
         "properties": {
           "sdk": {
@@ -331,6 +401,32 @@
         ],
         "type": "object"
       },
+      "IngestIn": {
+        "properties": {
+          "sdk": {
+            "$ref": "#/components/schemas/SDKInfo",
+            "description": "Which SDK collected these signals"
+          },
+          "signals": {
+            "additionalProperties": {},
+            "description": "The platform-specific signals the SDK collected",
+            "type": "object"
+          },
+          "tag": {
+            "description": "An opaque value echoed back on the event. Identify only",
+            "type": "string"
+          },
+          "token": {
+            "description": "The deferred_token returned by identify. Present only on a deferred report",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sdk",
+          "signals"
+        ],
+        "type": "object"
+      },
       "IssuedProxyCredentialOut": {
         "properties": {
           "credential": {
@@ -406,7 +502,15 @@
           "id": {
             "type": "string"
           },
+          "kind": {
+            "description": "cloudflare_worker, server_sdk or custom",
+            "type": "string"
+          },
           "last4": {
+            "type": "string"
+          },
+          "last_origin": {
+            "description": "The page origin last seen through the proxy",
             "type": "string"
           },
           "last_used_at": {
@@ -416,11 +520,24 @@
               "null"
             ]
           },
+          "last_version": {
+            "description": "What the proxy last reported itself as, such as cloudflare-worker/0.2.0",
+            "type": "string"
+          },
           "name": {
+            "type": "string"
+          },
+          "path": {
+            "description": "Where the browser SDK posts on your site",
             "type": "string"
           },
           "prefix": {
             "type": "string"
+          },
+          "requests_30d": {
+            "description": "Requests forwarded over the last 30 days",
+            "format": "int64",
+            "type": "integer"
           },
           "revoked_at": {
             "format": "date-time",
@@ -437,9 +554,11 @@
           "created_at",
           "environment",
           "id",
+          "kind",
           "last4",
           "name",
           "prefix",
+          "requests_30d",
           "status"
         ],
         "type": "object"
@@ -1625,6 +1744,123 @@
         ]
       }
     },
+    "/api/v1/ingest": {
+      "post": {
+        "description": "The one URL the browser SDK and every first-party proxy post to. A body with a `token` is a deferred report and is answered `202` with `request_id` and `duplicate`, exactly as the deferred report route answers. Any other body is an identification and is answered `200` with the complete verdict, exactly as the identify route answers.\n\nIt exists so a proxy can forward everything it receives to a single path, and so the SDK can post both calls to one path of the customer's choosing, with nothing appended that a content blocker could match across sites.",
+        "operationId": "submitFromBrowserSdk",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IngestIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentifyOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The deferred report was accepted"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable x-api-key header was presented"
+          },
+          "402": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The organization this key belongs to is not accepting traffic"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The body is over 1 MiB"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The organization is over its rate limit"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The submission could not be answered just now"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "secretKey": []
+          }
+        ],
+        "summary": "Submit from the browser SDK",
+        "tags": [
+          "Client API"
+        ]
+      }
+    },
     "/api/v1/management/key": {
       "get": {
         "description": "The organization and role of the key the request was made with. Every other management route names the organization in its path; read it here.",
@@ -1687,6 +1923,392 @@
           }
         ],
         "summary": "Describe the management key",
+        "tags": [
+          "Management API"
+        ]
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/hosted-domains": {
+      "get": {
+        "description": "`available` says whether hosted domains can be added on this deployment, and `target` is what each one's CNAME points at.",
+        "operationId": "listHostedDomains",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedDomainsOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Only an admin key may manage hosted domains"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "List hosted domains",
+        "tags": [
+          "Management API"
+        ]
+      },
+      "post": {
+        "description": "Registers a subdomain of your site for Fingerly to serve the browser SDK on, and asks for its certificate. It becomes `active` once your CNAME to `target` resolves and the certificate is issued. Omit `path` for a random one.",
+        "operationId": "addHostedDomain",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "hostname": {
+                    "description": "A subdomain of your site, such as k7.shop.example, that you will CNAME to target",
+                    "type": "string"
+                  },
+                  "path": {
+                    "description": "Where the browser SDK posts on it. Omit it for a random one",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "hostname"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedDomainOut"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Only an admin key may manage hosted domains"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The hostname is taken, or hosted domains are not available"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The hostname or path is not usable"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Add a hosted domain",
+        "tags": [
+          "Management API"
+        ]
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/hosted-domains/{hosted_domain_id}": {
+      "delete": {
+        "operationId": "removeHostedDomain",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "hosted_domain_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Only an admin key may manage hosted domains"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Remove a hosted domain",
+        "tags": [
+          "Management API"
+        ]
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/hosted-domains/{hosted_domain_id}/check": {
+      "post": {
+        "operationId": "checkHostedDomainNow",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "hosted_domain_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedDomainOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Only an admin key may manage hosted domains"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Check a hosted domain now",
         "tags": [
           "Management API"
         ]
@@ -1799,7 +2421,15 @@
                     "description": "production, staging or development",
                     "type": "string"
                   },
+                  "kind": {
+                    "description": "cloudflare_worker, server_sdk or custom. Defaults to custom",
+                    "type": "string"
+                  },
                   "name": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "description": "Where the browser SDK posts on your site, such as /k7x2qm4a. Omit it for a random one",
                     "type": "string"
                   }
                 },
@@ -1881,6 +2511,128 @@
           }
         ],
         "summary": "Issue a proxy key",
+        "tags": [
+          "Management API"
+        ]
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/proxy-credentials/{proxy_credential_id}": {
+      "patch": {
+        "description": "Changes the name, the kind, or the path the browser SDK posts to. The key itself is unchanged. Omit `path` for a new random one.",
+        "operationId": "updateProxyKey",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "proxy_credential_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "kind": {
+                    "description": "cloudflare_worker, server_sdk or custom",
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "description": "Where the browser SDK posts on your site. Omit it for a new random one",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProxyCredentialOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Only an admin key may manage proxy keys"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The path is not usable, or the kind is not known"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Update a proxy key",
         "tags": [
           "Management API"
         ]
