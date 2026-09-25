@@ -290,6 +290,10 @@
       },
       "IdentifyIn": {
         "properties": {
+          "consent": {
+            "description": "The SDK's consent state; must be granted",
+            "type": "string"
+          },
           "sdk": {
             "$ref": "#/components/schemas/SDKInfo",
             "description": "Which SDK collected these signals"
@@ -403,6 +407,10 @@
       },
       "IngestIn": {
         "properties": {
+          "consent": {
+            "description": "The SDK's consent state; must be granted",
+            "type": "string"
+          },
           "sdk": {
             "$ref": "#/components/schemas/SDKInfo",
             "description": "Which SDK collected these signals"
@@ -1526,6 +1534,10 @@
             "application/json": {
               "schema": {
                 "properties": {
+                  "consent": {
+                    "description": "The SDK's consent state; must be granted",
+                    "type": "string"
+                  },
                   "sdk": {
                     "$ref": "#/components/schemas/SDKInfo",
                     "description": "Which SDK collected these signals"
