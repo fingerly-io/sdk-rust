@@ -16,30 +16,30 @@ use http_body::Body;
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
 
 use crate::config::{
-    normalize_api_version, normalize_origin, normalize_prefix, parse_key, positive_duration,
-    KeyKind, KeyScope, DEFAULT_ENDPOINT,
+    normalize_api_version, normalize_origin, normalize_path, parse_key, positive_duration, KeyKind,
+    KeyScope, DEFAULT_ENDPOINT,
 };
 use crate::errors::{Error, Result};
 use crate::transport::USER_AGENT;
 
-const DEFAULT_PREFIX: &str = "/api/fingerly";
 const DEFAULT_MAX_BODY_BYTES: usize = 1 << 20;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Upstream headers that describe that connection rather than our response.
-/// reqwest has already decoded and framed the body, so replaying them would
-/// misdescribe the bytes we hand back.
-const CONNECTION_HEADERS: [&str; 10] = [
-    "connection",
-    "content-encoding",
-    "content-length",
-    "keep-alive",
-    "proxy-authenticate",
-    "proxy-authorization",
-    "te",
-    "trailer",
-    "transfer-encoding",
-    "upgrade",
+/// What this proxy reports itself as upstream; shown per proxy in the
+/// dashboard.
+const PROXY_VERSION: &str = concat!("rust/", env!("CARGO_PKG_VERSION"));
+
+/// The response headers relayed to the browser, and nothing else. A content
+/// blocker can match a response header by name, so an allowlist is what keeps
+/// anything naming Fingerly off the page, whatever the API adds in future. It
+/// also leaves out the headers that described the upstream connection, which
+/// would misdescribe the body reqwest has already decoded and framed.
+const RELAYED_HEADERS: [&str; 5] = [
+    "content-type",
+    "x-request-id",
+    "ratelimit-limit",
+    "ratelimit-remaining",
+    "retry-after",
 ];
 
 /// Resolves the visitor's address from the parts of the incoming request.
@@ -49,17 +49,20 @@ const CONNECTION_HEADERS: [&str; 10] = [
 /// `ConnectInfo` is reachable from inside it.
 pub type ClientIpFn = dyn Fn(&Parts) -> String + Send + Sync + 'static;
 
-/// Same-origin handler for the browser SDK's identify and supplement calls.
+/// Same-origin handler for the browser SDK.
 ///
-/// It exists so the browser SDK can post to your own domain instead of
-/// Fingerly, because content blockers refuse third-party requests and a
-/// refused identification is a visitor never identified. Only those two routes
-/// are forwarded, never event reads: reading events needs a secret key and
-/// must stay unreachable from a browser. It sends only vetted visitor
-/// metadata, and never passes on customer cookies or authorization headers.
+/// It exists so the browser SDK can post to a path on your own domain instead
+/// of Fingerly, because content blockers refuse third-party requests and a
+/// refused identification is a visitor never identified. The SDK posts both of
+/// its calls to that one path, and this forwards each to Fingerly's one ingest
+/// URL, never anywhere else and never to event reads: reading events needs a
+/// secret key and must stay unreachable from a browser. It sends only vetted
+/// visitor metadata, never passes on customer cookies or authorization
+/// headers, and relays nothing back that names Fingerly.
 ///
 /// It implements [`tower_service::Service`] over [`http::Request`], which is
-/// what axum, hyper, warp and tonic all take:
+/// what axum, hyper, warp and tonic all take. Mount it at the path the
+/// dashboard issued for the proxy:
 ///
 /// ```no_run
 /// # fn build() -> fingerly::Result<axum::Router> {
@@ -67,7 +70,6 @@ pub type ClientIpFn = dyn Fn(&Parts) -> String + Send + Sync + 'static;
 ///
 /// let proxy = FingerlyProxy::builder()
 ///     .proxy_key(std::env::var("FINGERLY_PROXY_KEY").unwrap())
-///     .prefix("/metrics")
 ///     .client_ip(|parts| {
 ///         parts
 ///             .headers
@@ -78,7 +80,7 @@ pub type ClientIpFn = dyn Fn(&Parts) -> String + Send + Sync + 'static;
 ///     })
 ///     .build()?;
 ///
-/// Ok(axum::Router::new().nest_service("/metrics", proxy))
+/// Ok(axum::Router::new().route_service("/k7x2qm4a", proxy))
 /// # }
 /// ```
 #[derive(Clone)]
@@ -93,12 +95,10 @@ struct ProxyInner {
     scope: KeyScope,
     /// Proxy keys authenticate the browser's public key; secret keys do not.
     uses_proxy_key: bool,
-    /// Fingerly origin requests are forwarded to.
-    upstream: String,
-    /// Local mount path, such as `/api/fingerly`, stripped before forwarding.
-    prefix: String,
-    /// API version accepted locally and sent upstream.
-    api_version: String,
+    /// The one URL requests are forwarded to.
+    upstream_url: String,
+    /// The one path answered, or `None` to answer wherever the router sends.
+    path: Option<String>,
     /// Request body limit in bytes; larger requests get HTTP 413.
     max_body_bytes: usize,
     /// Deadline for reading the body and forwarding it.
@@ -114,9 +114,8 @@ impl fmt::Debug for FingerlyProxy {
         // The key is deliberately absent: a proxy often ends up in a debug log
         // of the router it was mounted on.
         f.debug_struct("FingerlyProxy")
-            .field("prefix", &self.inner.prefix)
-            .field("upstream", &self.inner.upstream)
-            .field("api_version", &self.inner.api_version)
+            .field("path", &self.inner.path)
+            .field("upstream_url", &self.inner.upstream_url)
             .finish_non_exhaustive()
     }
 }
@@ -140,6 +139,10 @@ impl FingerlyProxy {
         let inner = &self.inner;
         let (parts, body) = request.into_parts();
 
+        if !inner.answers(parts.uri.path()) {
+            return refuse(StatusCode::NOT_FOUND);
+        }
+
         if parts.method != http::Method::POST {
             let mut response = refuse(StatusCode::METHOD_NOT_ALLOWED);
             response
@@ -147,10 +150,6 @@ impl FingerlyProxy {
                 .insert(http::header::ALLOW, HeaderValue::from_static("POST"));
             return response;
         }
-
-        let Some(upstream_path) = inner.route_for(parts.uri.path()) else {
-            return refuse(StatusCode::NOT_FOUND);
-        };
 
         let presented = parts
             .headers
@@ -186,7 +185,7 @@ impl FingerlyProxy {
             };
             match inner
                 .http
-                .post(format!("{}{upstream_path}", inner.upstream))
+                .post(&inner.upstream_url)
                 .headers(headers)
                 .body(body)
                 .send()
@@ -207,24 +206,15 @@ impl FingerlyProxy {
 }
 
 impl ProxyInner {
-    /// Maps a local path to its upstream path.
+    /// Whether this request's path is the one the proxy answers.
     ///
-    /// Event reads need a secret key and must stay unreachable from a browser,
-    /// so only identify and supplement are proxyable. The prefix is tolerated
-    /// as either present or already stripped, because `nest_service` and
-    /// friends remove the mount before the service sees it and give no way to
-    /// detect that they did.
-    fn route_for(&self, path: &str) -> Option<String> {
-        let versioned = format!("/api/{}", self.api_version);
-        let mount = format!("{}{versioned}", self.prefix);
-        let resource = path
-            .strip_prefix(&mount)
-            .or_else(|| path.strip_prefix(&versioned))?;
-
-        if resource != "/identify" && !is_supplement_path(resource) {
-            return None;
-        }
-        Some(format!("{versioned}{resource}"))
+    /// Without a configured path, whatever the router sent is answered: the
+    /// route already chose it. With one, only that exact path is, trailing
+    /// slashes aside, so nothing under it reaches Fingerly.
+    fn answers(&self, path: &str) -> bool {
+        self.path
+            .as_deref()
+            .is_none_or(|expected| path.trim_end_matches('/') == expected)
     }
 
     /// Decides which key to present upstream.
@@ -282,6 +272,10 @@ impl ProxyInner {
                 .unwrap_or_else(|| HeaderValue::from_static("")),
         );
         headers.insert(
+            HeaderName::from_static("x-fingerly-proxy-version"),
+            HeaderValue::from_static(PROXY_VERSION),
+        );
+        headers.insert(
             http::header::USER_AGENT,
             HeaderValue::from_static(USER_AGENT),
         );
@@ -330,7 +324,7 @@ pub struct FingerlyProxyBuilder {
     secret_key: Option<String>,
     api_version: Option<String>,
     upstream: Option<String>,
-    prefix: Option<String>,
+    path: Option<String>,
     max_body_bytes: Option<usize>,
     timeout: Option<Duration>,
     client_ip: Option<Arc<ClientIpFn>>,
@@ -340,7 +334,7 @@ pub struct FingerlyProxyBuilder {
 impl fmt::Debug for FingerlyProxyBuilder {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("FingerlyProxyBuilder")
-            .field("prefix", &self.prefix)
+            .field("path", &self.path)
             .field("upstream", &self.upstream)
             .finish_non_exhaustive()
     }
@@ -379,17 +373,19 @@ impl FingerlyProxyBuilder {
         self
     }
 
-    /// The path the proxy is mounted under. Defaults to `/api/fingerly`.
+    /// The path the dashboard issued for this proxy, such as `/k7x2qm4a`,
+    /// matched exactly. Anything else gets `404`.
     ///
-    /// Choose a neutral one: blockers look for words such as `fingerprint`,
-    /// `tracking` and `fingerly`.
-    pub fn prefix(mut self, prefix: impl Into<String>) -> Self {
-        self.prefix = Some(prefix.into());
+    /// Leave it unset when the router already sends only that path to the
+    /// service, as `route_service("/k7x2qm4a", proxy)` does. Set it when the
+    /// service sees more than that one path, as a fallback does. Do not set it
+    /// under `nest_service`, which strips the path before the service sees it.
+    pub fn path(mut self, path: impl Into<String>) -> Self {
+        self.path = Some(path.into());
         self
     }
 
-    /// The API route version accepted locally and forwarded upstream.
-    /// Defaults to `v1`.
+    /// The API route version forwarded upstream. Defaults to `v1`.
     pub fn api_version(mut self, version: impl Into<String>) -> Self {
         self.api_version = Some(version.into());
         self
@@ -425,7 +421,7 @@ impl FingerlyProxyBuilder {
     /// Validates every option and builds the handler.
     ///
     /// Unlike a request, a proxy is wired up once at start-up, so a bad
-    /// credential, route or limit is reported here.
+    /// credential, path or limit is reported here.
     pub fn build(self) -> Result<FingerlyProxy> {
         let uses_proxy_key = match (&self.proxy_key, &self.secret_key) {
             (None, None) => return Err(Error::config("a Fingerly proxy key is required")),
@@ -452,7 +448,8 @@ impl FingerlyProxyBuilder {
         let upstream =
             normalize_origin(&self.upstream.unwrap_or_else(|| DEFAULT_ENDPOINT.to_owned()))?;
         let api_version = normalize_api_version(self.api_version.as_deref().unwrap_or("v1"))?;
-        let prefix = normalize_prefix(self.prefix.as_deref().unwrap_or(DEFAULT_PREFIX))?;
+        let upstream_url = format!("{upstream}/api/{api_version}/ingest");
+        let path = self.path.as_deref().map(normalize_path).transpose()?;
         let max_body_bytes = match self.max_body_bytes {
             Some(0) => return Err(Error::config("max_body_bytes must be a positive integer")),
             Some(bytes) => bytes,
@@ -472,9 +469,8 @@ impl FingerlyProxyBuilder {
                 key,
                 scope,
                 uses_proxy_key,
-                upstream,
-                prefix,
-                api_version,
+                upstream_url,
+                path,
                 max_body_bytes,
                 timeout,
                 client_ip,
@@ -482,15 +478,6 @@ impl FingerlyProxyBuilder {
             }),
         })
     }
-}
-
-/// Whether a resource is `/events/{request_id}/supplement` with exactly one id
-/// segment.
-fn is_supplement_path(resource: &str) -> bool {
-    resource
-        .strip_prefix("/events/")
-        .and_then(|rest| rest.strip_suffix("/supplement"))
-        .is_some_and(|request_id| !request_id.is_empty() && !request_id.contains('/'))
 }
 
 /// Reads the declared body size, when the browser sent a usable one.
@@ -520,25 +507,26 @@ fn refuse(status: StatusCode) -> Response<Full<Bytes>> {
     response
 }
 
-/// Returns the upstream response to the browser, uncacheable and without the
-/// headers that described the upstream connection.
+/// Returns the upstream response to the browser, uncacheable and with only the
+/// allowlisted headers.
 ///
 /// The body is always drained, inside the caller's deadline, so a stalled
 /// upstream times out instead of holding a connection open.
 async fn relay(response: reqwest::Response) -> Response<Full<Bytes>> {
     let status = response.status();
-    let mut headers = response.headers().clone();
-    let Ok(bytes) = response.bytes().await else {
-        return refuse(StatusCode::BAD_GATEWAY);
-    };
-
-    for name in CONNECTION_HEADERS {
-        headers.remove(name);
+    let mut headers = http::HeaderMap::new();
+    for name in RELAYED_HEADERS {
+        if let Some(value) = response.headers().get(name) {
+            headers.insert(name, value.clone());
+        }
     }
     headers.insert(
         http::header::CACHE_CONTROL,
         HeaderValue::from_static("no-store"),
     );
+    let Ok(bytes) = response.bytes().await else {
+        return refuse(StatusCode::BAD_GATEWAY);
+    };
 
     let bodiless = matches!(
         status,

@@ -146,15 +146,16 @@ own site and those requests become first-party. The proxy key is what lets that
 hop declare the visitor's real address, origin and user agent; a public key
 alone never can, so nobody can spoof them.
 
-`FingerlyProxy` implements `tower::Service` over `http::Request`, which is what
-axum, hyper, warp and tonic all take:
+Create a proxy in the dashboard (**Integration > Proxy keys**), then mount the
+service at the path it issued, here `/k7x2qm4a`. `FingerlyProxy` implements
+`tower::Service` over `http::Request`, which is what axum, hyper, warp and tonic
+all take:
 
 ```rust
 use fingerly::FingerlyProxy;
 
 let proxy = FingerlyProxy::builder()
     .proxy_key(std::env::var("FINGERLY_PROXY_KEY")?)
-    .prefix("/metrics")
     .client_ip(|parts| {
         parts.headers
             .get("cf-connecting-ip")
@@ -164,13 +165,13 @@ let proxy = FingerlyProxy::builder()
     })
     .build()?;
 
-let app = axum::Router::new().nest_service("/metrics", proxy);
+let app = axum::Router::new().route_service("/k7x2qm4a", proxy);
 ```
 
 Then point the browser SDK at the same path:
 
 ```ts
-const fingerly = await load({ apiKey: 'fly_pk_…', endpoints: '/metrics' })
+const fingerly = await load({ apiKey: 'fly_pk_…', endpoints: '/k7x2qm4a' })
 ```
 
 For a framework that does not speak `tower`, `proxy.handle(request).await`
@@ -178,25 +179,41 @@ takes an `http::Request` and returns an `http::Response` directly.
 
 ### What the proxy does
 
-It forwards only `POST` to `{prefix}/api/v1/identify` and
-`{prefix}/api/v1/events/{request_id}/supplement`. Anything else gets `404`, and
-any other method gets `405`. Event reads need a secret key and stay unreachable
+The browser SDK posts both of its calls to that one path, and the proxy
+forwards each, as a `POST`, to Fingerly's one ingest URL,
+`https://api.fingerly.io/api/v1/ingest` (`api_version` changes the `v1`). Any
+other method gets `405`. Event reads need a secret key and stay unreachable
 from a browser by construction.
 
 The browser must present a public key from the same environment as the proxy
 key, or the request gets `401`. Bodies over 1 MiB get `413`. A
 Fingerly that stalls or cannot be reached gets `502` after 5 seconds rather
-than holding the browser's connection open. Responses are marked `no-store`.
-Only the content type, the visitor metadata Fingerly needs, and an
-`Idempotency-Key` are forwarded; customer cookies and authorization headers
-never are.
+than holding the browser's connection open. Only the content type, the visitor
+metadata Fingerly needs, and an `Idempotency-Key` are forwarded; customer
+cookies and authorization headers never are. The proxy reports itself upstream
+as `rust/0.1.0`, which the dashboard shows per proxy.
 
-`prefix` must match where you mount the service. Mounting under
-`nest_service`, `ServiceBuilder`'s path layers or any other router that strips
-the mount also works: the prefix is accepted as either present or already
-stripped, because none of them give a way to detect which happened. Choose a
-neutral path. Blockers look for words such as `fingerprint`, `tracking` and
-`fingerly`.
+Only `Content-Type`, `X-Request-Id`, `RateLimit-Limit`, `RateLimit-Remaining`
+and `Retry-After` are relayed back, plus `Cache-Control: no-store`, so nothing
+on the response names Fingerly.
+
+`path` is optional. Leave it unset when the router already sends only the
+issued path to the service, as `route_service` does. Set it when the service
+sees more than that, as a fallback does, and the proxy answers only that path,
+exactly, trailing slashes aside; anything else gets `404`:
+
+```rust
+let proxy = FingerlyProxy::builder()
+    .proxy_key(std::env::var("FINGERLY_PROXY_KEY")?)
+    .path("/k7x2qm4a")
+    // ...
+    .build()?;
+
+let app = axum::Router::new().fallback_service(proxy);
+```
+
+Do not set it under `nest_service` or any other router that strips the mount
+before the service sees it: the path would never match.
 
 > **`client_ip` is the one thing you must get right.** Resolve it from a header
 > your own infrastructure sets, such as your load balancer's or CDN's. Never
@@ -244,5 +261,5 @@ authenticated requests and maps failures to `Error::Api`. `events.rs` owns the
 event reads and the list filters; `models.rs` owns the types
 they decode into. `webhooks.rs` verifies signatures and needs nothing else in
 the crate. `proxy.rs` is the same-origin service. `config.rs` validates every
-caller-supplied option: keys, origins, API versions, mount paths and durations,
+caller-supplied option: keys, origins, API versions, proxy paths and durations,
 all before any network access. `errors.rs` holds the error type.

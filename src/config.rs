@@ -154,12 +154,15 @@ pub(crate) fn positive_duration(value: Duration, name: &str) -> Result<Duration>
     Ok(value)
 }
 
-/// Validates the local mount path and drops trailing slashes.
+/// Validates the path the dashboard issued and drops trailing slashes. It is
+/// matched exactly: the proxy answers that path and nothing under it.
 #[cfg(feature = "proxy")]
-pub(crate) fn normalize_prefix(value: &str) -> Result<String> {
-    let prefix = value.trim_end_matches('/');
-    if !prefix.starts_with('/') || prefix.contains(['?', '#']) {
-        return Err(Error::config("prefix must be an absolute URL path"));
+pub(crate) fn normalize_path(value: &str) -> Result<String> {
+    let path = value.trim().trim_end_matches('/');
+    if !path.starts_with('/') || path.len() < 2 || path.contains(['?', '#']) {
+        return Err(Error::config(
+            "path must be an absolute URL path such as /k7x2qm4a",
+        ));
     }
-    Ok(prefix.to_owned())
+    Ok(path.to_owned())
 }
