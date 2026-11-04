@@ -205,3 +205,16 @@ fn decodes_the_delivery_envelope() {
     assert_eq!(event.data["request_id"], "req_1");
     assert_eq!(event.data["invented_later"], true);
 }
+
+/// Only the first 32 candidates are checked, so a header stuffed with
+/// thousands costs no more than a rotation does.
+#[test]
+fn checks_at_most_32_signatures() {
+    let stamp = timestamp();
+    let good = sign(WEBHOOK_SECRET, &stamp, PAYLOAD);
+    let decoy = sign("whsec_decoy", &stamp, PAYLOAD);
+    let within = format!("{}{good}", format!("{decoy},").repeat(31));
+    let past = format!("{}{good}", format!("{decoy},").repeat(32));
+    assert!(verifier().verify(PAYLOAD, Some(&stamp), Some(&within)));
+    assert!(!verifier().verify(PAYLOAD, Some(&stamp), Some(&past)));
+}

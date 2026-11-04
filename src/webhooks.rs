@@ -17,6 +17,10 @@ pub const DEFAULT_WEBHOOK_TOLERANCE: Duration = Duration::from_secs(300);
 const SIGNATURE_PREFIX: &str = "sha256=";
 const DIGEST_HEX_LEN: usize = 64;
 
+/// Caps how many comma-separated candidates are checked. A rotation sends two;
+/// a header with thousands is someone making the receiver compare each.
+const MAX_SIGNATURES: usize = 32;
+
 /// The envelope every webhook delivery shares.
 ///
 /// `data` is left as raw JSON, so a new event type needs no SDK upgrade.
@@ -51,7 +55,8 @@ pub struct WebhookEvent {
 ///
 /// Pass the exact bytes received, before any JSON parsing: re-serialising them
 /// changes the digest. During a signing-secret rotation Fingerly sends several
-/// comma-separated signatures, and any one matching is accepted.
+/// comma-separated signatures, and any one of the first 32 matching is
+/// accepted.
 ///
 /// Verification proves the delivery came from Fingerly and is recent. It does
 /// not deduplicate, so persist processed [`WebhookEvent::id`] values as well.
@@ -142,6 +147,7 @@ impl WebhookVerifier {
         let expected = sign(&self.secret, timestamp, payload);
         signature
             .split(',')
+            .take(MAX_SIGNATURES)
             .any(|candidate| matches(candidate, &expected))
     }
 
