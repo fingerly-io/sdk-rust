@@ -264,3 +264,35 @@ fn a_client_is_cheap_to_clone_and_debug_safe() {
     let copy = fingerly.clone();
     assert!(!format!("{copy:?}").contains(SECRET_KEY));
 }
+
+/// Every non-2xx carries the status, the trace id (from the header when the
+/// body has none) and the Retry-After seconds, without echoing a body.
+#[tokio::test]
+async fn reports_retry_after_and_the_request_id_header() {
+    let server = TestServer::always(
+        Canned::json(429, "<html>slow down</html>")
+            .header("retry-after", "7")
+            .header("x-request-id", "req_header"),
+    )
+    .await;
+    let error = client(&server).events().get("req_1").await.unwrap_err();
+    let Error::Api(api) = &error else {
+        panic!("expected an API error, got {error:?}");
+    };
+    assert_eq!(api.status, 429);
+    assert_eq!(api.retry_after, Some(7));
+    assert_eq!(error.retry_after(), Some(7));
+    assert_eq!(api.request_id.as_deref(), Some("req_header"));
+    assert!(!error.to_string().contains("slow down"));
+
+    let server = TestServer::always(Canned::json(503, "{}")).await;
+    let error = client(&server).events().get("req_1").await.unwrap_err();
+    assert_eq!(error.retry_after(), None);
+}
+
+#[tokio::test]
+async fn refuses_an_answer_over_4_mib() {
+    let server = TestServer::always(Canned::bytes(200, vec![b' '; (4 << 20) + 1])).await;
+    let error = client(&server).events().get("req_1").await.unwrap_err();
+    assert!(matches!(error, Error::Decode { .. }), "{error:?}");
+}

@@ -20,6 +20,10 @@ pub struct ApiError {
     pub details: Option<serde_json::Value>,
     /// Server-side trace id to quote in support requests.
     pub request_id: Option<String>,
+    /// How many seconds the API asked the caller to wait, from its
+    /// `Retry-After` header, or `None` when it sent none. The SDK never
+    /// retries a read itself.
+    pub retry_after: Option<u64>,
 }
 
 impl fmt::Display for ApiError {
@@ -96,6 +100,15 @@ impl Error {
     pub fn code(&self) -> Option<&str> {
         match self {
             Error::Api(api) => api.code.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// The seconds from the API's `Retry-After` header, for an API error that
+    /// carried one.
+    pub fn retry_after(&self) -> Option<u64> {
+        match self {
+            Error::Api(api) => api.retry_after,
             _ => None,
         }
     }

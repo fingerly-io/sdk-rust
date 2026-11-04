@@ -17,6 +17,10 @@ pub(crate) const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 /// small; anything larger is not one worth reading.
 const MAX_ERROR_BODY: usize = 1 << 20;
 
+/// Caps a successful answer. An event is a few kilobytes and a page of them
+/// well under a megabyte.
+const MAX_RESPONSE_BODY: usize = 4 << 20;
+
 /// Every request carries a deadline that covers receiving the body, refuses
 /// redirects so the key is never replayed to another host, and reports
 /// failures as [`Error::Api`] without echoing the response body.
@@ -101,16 +105,43 @@ impl Transport {
             .map_err(|error| Error::connection(self.redact(&error.to_string())))?;
 
         let status = response.status();
-        let body = response
-            .bytes()
-            .await
-            .map_err(|error| Error::connection(self.redact(&error.to_string())))?;
+        let request_id = header_text(&response, "x-request-id");
+        let retry_after = header_text(&response, "retry-after")
+            .and_then(|value| parse_retry_after(&value, std::time::SystemTime::now()));
+        let body = self.read_capped(response).await?;
 
         if !status.is_success() {
-            return Err(Error::Api(self.api_error(status.as_u16(), &body)));
+            let mut error = self.api_error(status.as_u16(), &body);
+            error.request_id = error.request_id.or(request_id.map(|id| self.redact(&id)));
+            error.retry_after = retry_after;
+            return Err(Error::Api(error));
         }
         serde_json::from_slice(&body)
             .map_err(|error| Error::decode(self.redact(&error.to_string())))
+    }
+
+    /// Reads the whole body, refusing one over [`MAX_RESPONSE_BODY`] without
+    /// reading past the limit.
+    async fn read_capped(&self, mut response: reqwest::Response) -> Result<Vec<u8>> {
+        let too_large = || Error::decode("response body exceeds 4 MiB");
+        if response
+            .content_length()
+            .is_some_and(|length| length > MAX_RESPONSE_BODY as u64)
+        {
+            return Err(too_large());
+        }
+        let mut body = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|error| Error::connection(self.redact(&error.to_string())))?
+        {
+            if body.len() + chunk.len() > MAX_RESPONSE_BODY {
+                return Err(too_large());
+            }
+            body.extend_from_slice(&chunk);
+        }
+        Ok(body)
     }
 
     /// Maps an error response to a redacted [`ApiError`].
@@ -123,6 +154,7 @@ impl Transport {
             code: None,
             details: None,
             request_id: None,
+            retry_after: None,
         };
 
         let envelope: serde_json::Value =
@@ -149,5 +181,112 @@ impl Transport {
     /// Strips the secret key from anything an error may carry to logs.
     fn redact(&self, value: &str) -> String {
         value.replace(&self.secret_key, "[redacted]")
+    }
+}
+
+/// A header as text, when it is present and printable.
+fn header_text(response: &reqwest::Response, name: &str) -> Option<String> {
+    response
+        .headers()
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned)
+}
+
+/// Reads a `Retry-After` header as whole seconds: a number of seconds, or an
+/// HTTP date (IMF-fixdate, as RFC 9110 requires senders to use), counted from
+/// `now`. Anything else is `None`.
+fn parse_retry_after(value: &str, now: std::time::SystemTime) -> Option<u64> {
+    let value = value.trim();
+    if !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()) {
+        return value.parse().ok();
+    }
+    let at = parse_imf_fixdate(value)?;
+    let now = now.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
+    Some(at.saturating_sub(now))
+}
+
+/// Parses `Sun, 06 Nov 1994 08:49:37 GMT` into Unix seconds.
+fn parse_imf_fixdate(value: &str) -> Option<u64> {
+    let mut parts = value.split(' ');
+    let (_weekday, day, month, year, clock, zone) = (
+        parts.next()?,
+        parts.next()?,
+        parts.next()?,
+        parts.next()?,
+        parts.next()?,
+        parts.next()?,
+    );
+    if parts.next().is_some() || zone != "GMT" || day.len() != 2 || year.len() != 4 {
+        return None;
+    }
+    let month = match month {
+        "Jan" => 1,
+        "Feb" => 2,
+        "Mar" => 3,
+        "Apr" => 4,
+        "May" => 5,
+        "Jun" => 6,
+        "Jul" => 7,
+        "Aug" => 8,
+        "Sep" => 9,
+        "Oct" => 10,
+        "Nov" => 11,
+        "Dec" => 12,
+        _ => return None,
+    };
+    let day: u64 = day.parse().ok()?;
+    let year: i64 = year.parse().ok()?;
+    let mut clock = clock.split(':').map(|part| part.parse::<u64>().ok());
+    let (hour, minute, second) = (clock.next()??, clock.next()??, clock.next()??);
+    if clock.next().is_some() || hour > 23 || minute > 59 || second > 60 || !(1..=31).contains(&day)
+    {
+        return None;
+    }
+    // Days from the civil date, after Howard Hinnant's algorithm.
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let m = month as i64;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + day as i64 - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    let seconds = days * 86_400 + (hour * 3600 + minute * 60 + second) as i64;
+    u64::try_from(seconds).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[test]
+    fn reads_retry_after_as_seconds_or_a_date() {
+        let now = UNIX_EPOCH + Duration::from_secs(784_111_717); // Sun, 06 Nov 1994 08:48:37 GMT
+        assert_eq!(parse_retry_after("7", now), Some(7));
+        assert_eq!(parse_retry_after(" 0 ", now), Some(0));
+        assert_eq!(
+            parse_retry_after("Sun, 06 Nov 1994 08:49:37 GMT", now),
+            Some(60)
+        );
+        assert_eq!(
+            parse_retry_after("Sun, 06 Nov 1994 08:47:37 GMT", now),
+            Some(0)
+        );
+        assert_eq!(parse_imf_fixdate("Thu, 01 Jan 1970 00:00:00 GMT"), Some(0));
+        assert_eq!(
+            parse_imf_fixdate("Mon, 29 Feb 2016 12:00:00 GMT"),
+            Some(1_456_747_200)
+        );
+        for invalid in [
+            "",
+            "-3",
+            "soon",
+            "1.5",
+            "Sun, 06 Nov 1994 08:49:37 PST",
+            "Sunday, 06-Nov-94 08:49:37 GMT",
+        ] {
+            assert_eq!(parse_retry_after(invalid, now), None, "{invalid:?}");
+        }
     }
 }
