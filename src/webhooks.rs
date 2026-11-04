@@ -81,11 +81,23 @@ pub fn verify_webhook(
 ///
 /// [`verify_webhook`] is this with the defaults; reach for the verifier when
 /// you need to change one.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct WebhookVerifier {
     secret: String,
     tolerance: Duration,
     now: Option<u64>,
+}
+
+impl std::fmt::Debug for WebhookVerifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // A verifier held in shared state ends up in debug logs; the signing
+        // secret must not.
+        f.debug_struct("WebhookVerifier")
+            .field("secret", &"[redacted]")
+            .field("tolerance", &self.tolerance)
+            .field("now", &self.now)
+            .finish()
+    }
 }
 
 impl WebhookVerifier {

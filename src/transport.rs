@@ -36,6 +36,7 @@ impl std::fmt::Debug for Transport {
         // The key is deliberately absent: a client is easy to end up inside
         // the debug output of whatever is holding it.
         f.debug_struct("Transport")
+            .field("secret_key", &"[redacted]")
             .field("base_url", &self.base_url)
             .field("timeout", &self.timeout)
             .finish_non_exhaustive()

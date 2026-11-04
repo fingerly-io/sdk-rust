@@ -59,13 +59,25 @@ impl Fingerly {
 }
 
 /// Configures a [`Fingerly`] client. Start one with [`Fingerly::builder`].
-#[derive(Debug)]
 pub struct FingerlyBuilder {
     secret_key: String,
     endpoint: Option<String>,
     api_version: Option<String>,
     timeout: Option<Duration>,
     http_client_builder: Option<reqwest::ClientBuilder>,
+}
+
+impl std::fmt::Debug for FingerlyBuilder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // A builder is as easy to log as the client it builds; the key never
+        // appears in either.
+        f.debug_struct("FingerlyBuilder")
+            .field("secret_key", &"[redacted]")
+            .field("endpoint", &self.endpoint)
+            .field("api_version", &self.api_version)
+            .field("timeout", &self.timeout)
+            .finish_non_exhaustive()
+    }
 }
 
 impl FingerlyBuilder {

@@ -114,6 +114,7 @@ impl fmt::Debug for FingerlyProxy {
         // The key is deliberately absent: a proxy often ends up in a debug log
         // of the router it was mounted on.
         f.debug_struct("FingerlyProxy")
+            .field("key", &"[redacted]")
             .field("path", &self.inner.path)
             .field("upstream_url", &self.inner.upstream_url)
             .finish_non_exhaustive()
@@ -333,7 +334,10 @@ pub struct FingerlyProxyBuilder {
 
 impl fmt::Debug for FingerlyProxyBuilder {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let redact = |key: &Option<String>| key.as_ref().map(|_| "[redacted]");
         f.debug_struct("FingerlyProxyBuilder")
+            .field("proxy_key", &redact(&self.proxy_key))
+            .field("secret_key", &redact(&self.secret_key))
             .field("path", &self.path)
             .field("upstream", &self.upstream)
             .finish_non_exhaustive()
