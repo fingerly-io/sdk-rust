@@ -13,7 +13,7 @@ categories = ["api-bindings", "web-programming::http-client"]
 readme = "README.md"
 # These exist for this repository's own CI. A published crate has no use for
 # 110 KB of OpenAPI, and the contract tests would fail without it.
-exclude = ["/contract", "/tests", "/examples/sync_contract.rs", "/.github"]
+exclude = ["/contract", "/tests", "/examples/sync_contract.rs", "/.github", "/.cargo", "/.gitignore"]
 
 [features]
 default = ["client", "proxy", "rustls"]
