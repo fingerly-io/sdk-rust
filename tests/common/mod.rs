@@ -90,6 +90,12 @@ pub fn event_body(request_id: &str) -> String {
 }
 
 /// The `404 event_not_found` envelope, which is the only retryable failure.
+pub fn pending_body() -> String {
+    r#"{"error":{"code":"event_pending","message":"Still recording","status":404},
+        "request_id":"req_trace"}"#
+        .to_owned()
+}
+
 pub fn not_found_body() -> String {
     r#"{"error":{"code":"event_not_found","message":"No such event","status":404},
         "request_id":"req_trace"}"#

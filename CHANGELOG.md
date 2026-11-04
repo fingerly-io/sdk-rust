@@ -25,5 +25,10 @@ Changes made during pre-release testing:
   seconds; the request id falls back to the `X-Request-Id` header. Read answers
   over 4 MiB are refused as `Error::Decode`.
 - Webhook verification checks at most 32 signature candidates.
+- `Error::is_event_pending()` and `ApiError::is_pending()` recognise
+  `404 event_pending` (the request id was accepted, the event is not recorded
+  yet; `retry_after` is set). `is_event_not_found()`, with the new
+  `ApiError::is_not_found()`, still matches only `event_not_found` (never
+  issued, or past retention). Neither is retried.
 - The package no longer ships `.cargo/config.toml` or `.gitignore`, and the
   lockfile no longer pins a yanked crate.

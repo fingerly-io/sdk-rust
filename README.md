@@ -65,7 +65,11 @@ seconds from the `Retry-After` header, also reachable as
 ```rust
 match fingerly.events().get(&request_id).await {
     Ok(event) => { /* … */ }
-    Err(error) if error.is_event_not_found() => { /* no such request id */ }
+    Err(error) if error.is_event_pending() => {
+        let wait = error.retry_after().unwrap_or(2); // seconds
+        /* not recorded yet: try again after `wait`, or verify asynchronously */
+    }
+    Err(error) if error.is_event_not_found() => { /* never issued, or past retention */ }
     Err(error) if error.status() == Some(429) => {
         let wait = error.retry_after().unwrap_or(1); // seconds
         /* back off for at least `wait` */
@@ -74,8 +78,16 @@ match fingerly.events().get(&request_id).await {
 }
 ```
 
-A missing event has a predicate, so it needs no status-and-code check:
-`error.is_event_not_found()`.
+A `404` from `get` carries one of two codes, each with a predicate, so
+neither needs a status-and-code check:
+
+- `error.is_event_pending()` (`ApiError::is_pending()`): the request id was
+  accepted but its event is not recorded yet. It is not a verdict. Try again
+  after `error.retry_after()` seconds, or verify asynchronously, for example
+  from a webhook. The SDK never retries on its own.
+- `error.is_event_not_found()` (`ApiError::is_not_found()`): the request id was
+  never issued for this key's environment, or the event is past the 30-day
+  retention.
 
 ## Unscored events
 
@@ -96,16 +108,14 @@ so a field the API adds later is reachable without an SDK upgrade.
 
 ## Read an event you just identified
 
-An event is readable as soon as identification answers, so this needs nothing
-special:
-
 ```rust
 let event = fingerly.events().get(&request_id).await?;
 ```
 
-Earlier versions had a `wait_for` that polled through the gap between
-identification and the event becoming queryable. There is no gap, so
-`is_event_not_found()` now means a request id that was never issued.
+If the event is not recorded yet, the error has `is_event_pending()` and a
+`retry_after()`: try again after that many seconds, or verify asynchronously.
+`is_event_not_found()` means the request id was never issued or the event is
+past retention.
 
 The archived `document` arrives moments after the event itself, so check
 `has_document` rather than assuming it is there.
@@ -117,6 +127,33 @@ that it is recent, that its environment is correct, and that it was scored.
 Apply your own policy to the server's verdict. Do not authorize an action using
 scores or visitor identifiers supplied by the browser. Tags correlate events;
 they do not replace your application's authentication or replay protection.
+
+```rust
+use fingerly::{Error, Event, Fingerly};
+
+enum Verdict {
+    Allow,
+    Refuse,
+    /// Not decided yet: ask the caller to come back after this many seconds.
+    Pending(u64),
+}
+
+async fn verify(fingerly: &Fingerly, request_id: &str, tag: &str) -> Result<Verdict, Error> {
+    let event: Event = match fingerly.events().get(request_id).await {
+        Ok(event) => event,
+        // Not decided yet, not fraud.
+        Err(error) if error.is_event_pending() => {
+            return Ok(Verdict::Pending(error.retry_after().unwrap_or(2)));
+        }
+        Err(error) if error.is_event_not_found() => return Ok(Verdict::Refuse),
+        Err(error) => return Err(error),
+    };
+    if event.tag.as_deref() != Some(tag) || !event.is_scored() {
+        return Ok(Verdict::Refuse);
+    }
+    Ok(Verdict::Allow)
+}
+```
 
 ## Webhooks
 

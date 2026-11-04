@@ -4,7 +4,7 @@ mod common;
 
 use std::time::Duration;
 
-use common::{event_body, not_found_body, Canned, TestServer, SECRET_KEY};
+use common::{event_body, not_found_body, pending_body, Canned, TestServer, SECRET_KEY};
 use fingerly::{Error, EventListParams, Fingerly, SuspectLevel};
 
 fn client(server: &TestServer) -> Fingerly {
@@ -150,9 +150,9 @@ async fn refuses_a_page_or_limit_of_zero() {
     assert_eq!(server.request_count(), 0, "an invalid filter was sent");
 }
 
-/// An event is readable as soon as identification answers, so a missing one is
-/// a request id that was never issued. There is nothing to wait for, and one
-/// call makes exactly one request.
+/// A missing event is a request id that was never issued or is past
+/// retention. There is nothing to wait for, and one call makes exactly one
+/// request.
 #[tokio::test]
 async fn reports_a_missing_event_rather_than_waiting_for_one() {
     let server = TestServer::always(Canned::json(404, not_found_body())).await;
@@ -160,7 +160,45 @@ async fn reports_a_missing_event_rather_than_waiting_for_one() {
     let error = client(&server).events().get("req_1").await.unwrap_err();
 
     assert!(error.is_event_not_found(), "got {error:?}");
+    assert!(!error.is_event_pending(), "got {error:?}");
+    assert_eq!(error.retry_after(), None);
     assert_eq!(server.request_count(), 1, "the read was retried");
+}
+
+/// A pending event (accepted, not recorded yet) is told apart from a missing
+/// one, carries its Retry-After, and is not waited through either.
+#[tokio::test]
+async fn reports_a_pending_event_apart_without_retrying() {
+    let server =
+        TestServer::always(Canned::json(404, pending_body()).header("retry-after", "2")).await;
+
+    let error = client(&server).events().get("req_1").await.unwrap_err();
+
+    assert!(error.is_event_pending(), "got {error:?}");
+    assert!(!error.is_event_not_found(), "got {error:?}");
+    assert_eq!(error.retry_after(), Some(2));
+    let Error::Api(api) = &error else {
+        panic!("expected an API error, got {error:?}");
+    };
+    assert!(api.is_pending());
+    assert!(!api.is_not_found());
+    assert_eq!(api.status, 404);
+    assert_eq!(api.code.as_deref(), Some("event_pending"));
+    assert_eq!(server.request_count(), 1, "the read was retried");
+}
+
+/// Only a 404 is pending.
+#[tokio::test]
+async fn pending_needs_a_404() {
+    let server = TestServer::always(Canned::json(
+        409,
+        r#"{"error":{"code":"event_pending","message":"no","status":409}}"#,
+    ))
+    .await;
+
+    let error = client(&server).events().get("req_1").await.unwrap_err();
+
+    assert!(!error.is_event_pending(), "got {error:?}");
 }
 
 /// Every other failure is one request too, whatever it is.

@@ -291,7 +291,7 @@
       "IdentifyIn": {
         "properties": {
           "consent": {
-            "description": "The SDK's consent state; must be granted",
+            "description": "The SDK's consent state; must be granted, or the request is refused with consent_required",
             "type": "string"
           },
           "sdk": {
@@ -308,10 +308,6 @@
             "type": "string"
           }
         },
-        "required": [
-          "sdk",
-          "signals"
-        ],
         "type": "object"
       },
       "IdentifyOut": {
@@ -408,7 +404,7 @@
       "IngestIn": {
         "properties": {
           "consent": {
-            "description": "The SDK's consent state; must be granted",
+            "description": "The SDK's consent state; must be granted, or the request is refused with consent_required",
             "type": "string"
           },
           "sdk": {
@@ -429,10 +425,6 @@
             "type": "string"
           }
         },
-        "required": [
-          "sdk",
-          "signals"
-        ],
         "type": "object"
       },
       "IssuedProxyCredentialOut": {
@@ -977,6 +969,12 @@
           "description": {
             "type": "string"
           },
+          "inactive_on": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "key": {
             "type": "string"
           },
@@ -1015,6 +1013,12 @@
       },
       "SignalMemberOut": {
         "properties": {
+          "inactive_on": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "signal": {
             "type": "string"
           },
@@ -1044,6 +1048,54 @@
         },
         "required": [
           "request_id"
+        ],
+        "type": "object"
+      },
+      "VisitorErasureOut": {
+        "properties": {
+          "completed_at": {
+            "description": "When everything else was removed",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "requested_at": {
+            "description": "When it was asked for, and when the identity itself was removed",
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "description": "pending while the stored identifications and archived submissions are being removed, then done",
+            "type": "string"
+          },
+          "visitor_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "requested_at",
+          "status",
+          "visitor_id"
+        ],
+        "type": "object"
+      },
+      "VisitorErasuresOut": {
+        "properties": {
+          "erasures": {
+            "items": {
+              "$ref": "#/components/schemas/VisitorErasureOut"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "erasures"
         ],
         "type": "object"
       },
@@ -1326,7 +1378,9 @@
         "summary": "Request an attestation challenge",
         "tags": [
           "Client API"
-        ]
+        ],
+        "x-category": "Client API",
+        "x-title": "Get an attestation challenge"
       }
     },
     "/api/v1/events": {
@@ -1435,7 +1489,9 @@
         "summary": "List events",
         "tags": [
           "Server API"
-        ]
+        ],
+        "x-category": "Server API",
+        "x-title": "List events"
       }
     },
     "/api/v1/events/{request_id}": {
@@ -1481,7 +1537,7 @@
                 }
               }
             },
-            "description": "No event with that request ID in this key's environment, or it is older than 30 days"
+            "description": "`event_not_found`: no event with that request ID in this key's environment, or it is older than 30 days. `event_pending`: the identification was accepted and is still being recorded; retry after the `Retry-After` seconds"
           },
           "422": {
             "content": {
@@ -1512,7 +1568,9 @@
         "summary": "Get an event",
         "tags": [
           "Server API"
-        ]
+        ],
+        "x-category": "Server API",
+        "x-title": "Get an event"
       }
     },
     "/api/v1/events/{request_id}/supplement": {
@@ -1535,7 +1593,7 @@
               "schema": {
                 "properties": {
                   "consent": {
-                    "description": "The SDK's consent state; must be granted",
+                    "description": "The SDK's consent state; must be granted, or the request is refused with consent_required",
                     "type": "string"
                   },
                   "sdk": {
@@ -1552,11 +1610,6 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "sdk",
-                  "signals",
-                  "token"
-                ],
                 "type": "object"
               }
             }
@@ -1643,12 +1696,14 @@
         "summary": "Submit a deferred report",
         "tags": [
           "Client API"
-        ]
+        ],
+        "x-category": "Client API",
+        "x-title": "Submit a deferred report"
       }
     },
     "/api/v1/identify": {
       "post": {
-        "description": "Submits the signal report a client SDK collected and answers with the complete verdict: the request ID, the visitor ID and its confidence, and the suspect score, level and triggers. There is no second call to make.\n\nThe client SDKs build and send this request. `signals` is produced by them and is not a public contract. Send an `Idempotency-Key` header, and the same value on every retry, so a retried identification is answered and charged once.",
+        "description": "Submits the signal report a client SDK collected and answers with the complete verdict: the request ID, the visitor ID and its confidence, and the suspect score, level and triggers. There is no second call to make.\n\nThe client SDKs build and send this request. `signals` is produced by them and is not a public contract. Send an `Idempotency-Key` header, and the same value on every retry, so a retried identification is answered and charged once.\n\nThe `X-Request-Id` response header names this HTTP exchange, for support and logs. It is not the `request_id` in the body, which names the identification and is what `GET /events/{request_id}` reads.",
         "operationId": "identifyVisitor",
         "requestBody": {
           "content": {
@@ -1753,13 +1808,15 @@
         "summary": "Identify a visitor",
         "tags": [
           "Client API"
-        ]
+        ],
+        "x-category": "Client API",
+        "x-title": "Identify a visitor"
       }
     },
     "/api/v1/ingest": {
       "post": {
-        "description": "The one URL the browser SDK and every first-party proxy post to. A body with a `token` is a deferred report and is answered `202` with `request_id` and `duplicate`, exactly as the deferred report route answers. Any other body is an identification and is answered `200` with the complete verdict, exactly as the identify route answers.\n\nIt exists so a proxy can forward everything it receives to a single path, and so the SDK can post both calls to one path of the customer's choosing, with nothing appended that a content blocker could match across sites.",
-        "operationId": "submitFromBrowserSdk",
+        "description": "The one URL the client SDKs and every first-party proxy post to. A body with a `token` is a deferred report and is answered `202` with `request_id` and `duplicate`, exactly as the deferred report route answers. Any other body is an identification and is answered `200` with the complete verdict, exactly as the identify route answers.\n\nIt exists so a proxy can forward everything it receives to a single path, and so the SDK can post both calls to one path of the customer's choosing, with nothing appended that a content blocker could match across sites.\n\nThe `X-Request-Id` response header names this HTTP exchange, for support and logs. It is not the `request_id` in the body, which names the identification and is what `GET /events/{request_id}` reads.",
+        "operationId": "submitFromClientSdk",
         "requestBody": {
           "content": {
             "application/json": {
@@ -1867,10 +1924,12 @@
             "secretKey": []
           }
         ],
-        "summary": "Submit from the browser SDK",
+        "summary": "Submit from a client SDK",
         "tags": [
           "Client API"
-        ]
+        ],
+        "x-category": "Client API",
+        "x-title": "Ingest from a client SDK"
       }
     },
     "/api/v1/management/key": {
@@ -1937,7 +1996,9 @@
         "summary": "Describe the management key",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: keys",
+        "x-title": "Describe this key"
       }
     },
     "/api/v1/management/organizations/{organization_id}/hosted-domains": {
@@ -2024,7 +2085,9 @@
         "summary": "List hosted domains",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: hosted domains",
+        "x-title": "List hosted domains"
       },
       "post": {
         "description": "Registers a subdomain of your site for Fingerly to serve the browser SDK on, and asks for its certificate. It becomes `active` once your CNAME to `target` resolves and the certificate is issued. Omit `path` for a random one.",
@@ -2053,9 +2116,6 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "hostname"
-                ],
                 "type": "object"
               }
             }
@@ -2142,7 +2202,9 @@
         "summary": "Add a hosted domain",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: hosted domains",
+        "x-title": "Add a hosted domain"
       }
     },
     "/api/v1/management/organizations/{organization_id}/hosted-domains/{hosted_domain_id}": {
@@ -2229,7 +2291,9 @@
         "summary": "Remove a hosted domain",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: hosted domains",
+        "x-title": "Remove a hosted domain"
       }
     },
     "/api/v1/management/organizations/{organization_id}/hosted-domains/{hosted_domain_id}/check": {
@@ -2323,7 +2387,9 @@
         "summary": "Check a hosted domain now",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: hosted domains",
+        "x-title": "Check a hosted domain"
       }
     },
     "/api/v1/management/organizations/{organization_id}/proxy-credentials": {
@@ -2409,7 +2475,9 @@
         "summary": "List proxy keys",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: keys",
+        "x-title": "List proxy keys"
       },
       "post": {
         "description": "The response carries `secret` in full, once.",
@@ -2445,10 +2513,6 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "environment",
-                  "name"
-                ],
                 "type": "object"
               }
             }
@@ -2525,7 +2589,9 @@
         "summary": "Issue a proxy key",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: keys",
+        "x-title": "Issue a proxy key"
       }
     },
     "/api/v1/management/organizations/{organization_id}/proxy-credentials/{proxy_credential_id}": {
@@ -2567,10 +2633,6 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "kind",
-                  "name"
-                ],
                 "type": "object"
               }
             }
@@ -2647,7 +2709,9 @@
         "summary": "Update a proxy key",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: keys",
+        "x-title": "Update a proxy key"
       }
     },
     "/api/v1/management/organizations/{organization_id}/proxy-credentials/{proxy_credential_id}/revoke": {
@@ -2741,7 +2805,9 @@
         "summary": "Revoke a proxy key",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: keys",
+        "x-title": "Revoke a proxy key"
       }
     },
     "/api/v1/management/organizations/{organization_id}/risk-weights": {
@@ -2829,7 +2895,9 @@
         "summary": "Read the organization's risk weights",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: risk weights",
+        "x-title": "Get organization weights"
       }
     },
     "/api/v1/management/organizations/{organization_id}/risk-weights/{platform}": {
@@ -2925,7 +2993,9 @@
         "summary": "Restore the default risk weights for a platform",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: risk weights",
+        "x-title": "Reset platform weights"
       },
       "put": {
         "description": "Every field is optional. Send the `revision` a read returned to be refused with 409 if someone saved in between. Applies to the next identification.",
@@ -3080,7 +3150,9 @@
         "summary": "Save the organization's risk weights for a platform",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: risk weights",
+        "x-title": "Save platform weights"
       }
     },
     "/api/v1/management/organizations/{organization_id}/sdk-keys": {
@@ -3176,7 +3248,9 @@
         "summary": "List SDK keys",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: keys",
+        "x-title": "List SDK keys"
       },
       "post": {
         "description": "`kind` is public or secret, and `environment` is production, staging or development. A public key needs at least one allowed origin; a secret key may have none. The response carries `secret` in full, once.",
@@ -3231,11 +3305,6 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "environment",
-                  "kind",
-                  "name"
-                ],
                 "type": "object"
               }
             }
@@ -3312,7 +3381,9 @@
         "summary": "Issue an SDK key",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: keys",
+        "x-title": "Issue an SDK key"
       }
     },
     "/api/v1/management/organizations/{organization_id}/sdk-keys/{sdk_key_id}/origins": {
@@ -3360,9 +3431,6 @@
                     "type": "array"
                   }
                 },
-                "required": [
-                  "allowed_origins"
-                ],
                 "type": "object"
               }
             }
@@ -3449,7 +3517,9 @@
         "summary": "Replace a public key's allowed origins",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: keys",
+        "x-title": "Set SDK key origins"
       }
     },
     "/api/v1/management/organizations/{organization_id}/sdk-keys/{sdk_key_id}/revoke": {
@@ -3564,7 +3634,9 @@
         "summary": "Revoke an SDK key",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: keys",
+        "x-title": "Revoke an SDK key"
       }
     },
     "/api/v1/management/organizations/{organization_id}/sdk-keys/{sdk_key_id}/risk-weights": {
@@ -3661,7 +3733,9 @@
         "summary": "Read an SDK key's risk weights",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: risk weights",
+        "x-title": "Get key weights"
       }
     },
     "/api/v1/management/organizations/{organization_id}/sdk-keys/{sdk_key_id}/risk-weights/{platform}": {
@@ -3767,7 +3841,9 @@
         "summary": "Remove an SDK key's risk weights for a platform",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: risk weights",
+        "x-title": "Remove key platform weights"
       },
       "put": {
         "description": "Overrides the organization's profile for this key alone.",
@@ -3931,7 +4007,198 @@
         "summary": "Save an SDK key's risk weights for a platform",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: risk weights",
+        "x-title": "Save key platform weights"
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/visitor-erasures": {
+      "get": {
+        "description": "The last hundred erasures, newest first, each pending or done.",
+        "operationId": "listVisitorErasures",
+        "parameters": [
+          {
+            "description": "The organization",
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisitorErasuresOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Only an admin key may erase a visitor"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "List visitor erasures",
+        "tags": [
+          "Management API"
+        ],
+        "x-category": "Management: visitors",
+        "x-title": "List visitor erasures"
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/visitors/{visitor_id}": {
+      "delete": {
+        "description": "Erases everything this platform holds about one visitor. The identity goes at once, with the webhook events that name the visitor, so a device that comes back is a new visitor from that moment. The stored identifications, their deferred reports and the archived submissions follow within the hour, and the erasure's status turns from `pending` to `done`.\n\nAsking again while one is pending returns that one. An identifier this organization never saw is accepted and erases nothing. Counts already folded into the dashboards are kept: they hold no identifier. Backups age out on their own thirty-day schedule.",
+        "operationId": "eraseVisitor",
+        "parameters": [
+          {
+            "description": "The organization the visitor belongs to",
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The visitor to erase, as identifications report it",
+            "in": "path",
+            "name": "visitor_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisitorErasureOut"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Only an admin key may erase a visitor"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not a visitor identifier"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Erase a visitor",
+        "tags": [
+          "Management API"
+        ],
+        "x-category": "Management: visitors",
+        "x-title": "Erase a visitor"
       }
     },
     "/api/v1/management/organizations/{organization_id}/webhook-deliveries": {
@@ -3958,7 +4225,7 @@
             "in": "query",
             "name": "limit",
             "schema": {
-              "default": "50",
+              "default": 50,
               "format": "int64",
               "type": "integer"
             }
@@ -4041,7 +4308,9 @@
         "summary": "List webhook delivery attempts",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: webhooks",
+        "x-title": "List webhook deliveries"
       }
     },
     "/api/v1/management/organizations/{organization_id}/webhooks": {
@@ -4127,7 +4396,9 @@
         "summary": "List webhook endpoints",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: webhooks",
+        "x-title": "List webhook endpoints"
       },
       "post": {
         "description": "The response carries the signing secret in full, once.",
@@ -4163,12 +4434,6 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "description",
-                  "environment",
-                  "events",
-                  "url"
-                ],
                 "type": "object"
               }
             }
@@ -4245,7 +4510,9 @@
         "summary": "Create a webhook endpoint",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: webhooks",
+        "x-title": "Create a webhook endpoint"
       }
     },
     "/api/v1/management/organizations/{organization_id}/webhooks/{webhook_id}": {
@@ -4332,7 +4599,9 @@
         "summary": "Delete a webhook endpoint",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: webhooks",
+        "x-title": "Delete a webhook endpoint"
       },
       "patch": {
         "description": "Send only the fields to change. `paused` pauses or resumes the endpoint.",
@@ -4470,7 +4739,9 @@
         "summary": "Update a webhook endpoint",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: webhooks",
+        "x-title": "Update a webhook endpoint"
       }
     },
     "/api/v1/management/organizations/{organization_id}/webhooks/{webhook_id}/redeliver": {
@@ -4503,9 +4774,6 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "event_id"
-                ],
                 "type": "object"
               }
             }
@@ -4575,7 +4843,9 @@
         "summary": "Redeliver an event to a webhook endpoint",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: webhooks",
+        "x-title": "Redeliver an event"
       }
     },
     "/api/v1/management/organizations/{organization_id}/webhooks/{webhook_id}/rotate-secret": {
@@ -4689,7 +4959,9 @@
         "summary": "Rotate a webhook endpoint's signing secret",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: webhooks",
+        "x-title": "Rotate a signing secret"
       }
     },
     "/api/v1/management/organizations/{organization_id}/webhooks/{webhook_id}/test": {
@@ -4783,7 +5055,9 @@
         "summary": "Send a test event to a webhook endpoint",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: webhooks",
+        "x-title": "Send a test event"
       }
     },
     "/api/v1/management/signals/catalogue": {
@@ -4850,7 +5124,9 @@
         "summary": "List signals",
         "tags": [
           "Management API"
-        ]
+        ],
+        "x-category": "Management: risk weights",
+        "x-title": "List signals"
       }
     }
   },
@@ -4873,5 +5149,14 @@
       "description": "Manage SDK keys, proxy keys, webhook endpoints and risk weights with a management key.",
       "name": "Management API"
     }
+  ],
+  "x-categories": [
+    "Client API",
+    "Server API",
+    "Management: keys",
+    "Management: hosted domains",
+    "Management: visitors",
+    "Management: webhooks",
+    "Management: risk weights"
   ]
 }

@@ -157,9 +157,11 @@ impl EventsClient {
 
     /// Fetches one event by request id.
     ///
-    /// An event is readable as soon as identification answers, so an error for
-    /// which [`Error::is_event_not_found`] is true means a request id that was
-    /// never issued rather than one that has not landed yet.
+    /// An error for which [`Error::is_event_pending`] is true means the request
+    /// id was accepted but the event is not recorded yet; its
+    /// [`retry_after`](Error::retry_after) says when to try again. One for
+    /// which [`Error::is_event_not_found`] is true means it was never issued
+    /// or is past retention. Neither is retried.
     pub async fn get(&self, request_id: &str) -> Result<Event> {
         let path = format!("/events/{}", utf8_percent_encode(request_id, PATH_SEGMENT));
         let body = self.transport.get_json(&path).await?;

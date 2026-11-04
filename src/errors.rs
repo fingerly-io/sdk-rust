@@ -37,6 +37,22 @@ impl fmt::Display for ApiError {
 
 impl std::error::Error for ApiError {}
 
+impl ApiError {
+    /// True for `404 event_pending`: the request id was accepted but its event
+    /// is not recorded yet. This is not a verdict; try again after
+    /// [`retry_after`](Self::retry_after) seconds, or verify asynchronously.
+    /// The SDK never retries on its own.
+    pub fn is_pending(&self) -> bool {
+        self.status == 404 && self.code.as_deref() == Some("event_pending")
+    }
+
+    /// True for `404 event_not_found`: the request id was never issued for
+    /// this key's environment, or the event is past retention.
+    pub fn is_not_found(&self) -> bool {
+        self.status == 404 && self.code.as_deref() == Some("event_not_found")
+    }
+}
+
 /// Every failure this crate reports.
 ///
 /// [`Error::Config`] is a programming mistake rather than something to handle
@@ -113,12 +129,19 @@ impl Error {
         }
     }
 
-    /// True when there is no such event.
-    ///
-    /// An event is readable as soon as identification answers, so this means a
-    /// request id that was never issued rather than one that has not landed.
+    /// True when there is no such event (`404 event_not_found`): the request
+    /// id was never issued for this key's environment, or the event is past
+    /// retention. A pending event is not "not found"; see
+    /// [`is_event_pending`](Self::is_event_pending).
     pub fn is_event_not_found(&self) -> bool {
-        matches!(self, Error::Api(api) if api.status == 404 && api.code.as_deref() == Some("event_not_found"))
+        matches!(self, Error::Api(api) if api.is_not_found())
+    }
+
+    /// True when the event is not recorded yet (`404 event_pending`); see
+    /// [`ApiError::is_pending`]. [`retry_after`](Self::retry_after) says when
+    /// to try again.
+    pub fn is_event_pending(&self) -> bool {
+        matches!(self, Error::Api(api) if api.is_pending())
     }
 
     /// True when an SDK deadline elapsed.
