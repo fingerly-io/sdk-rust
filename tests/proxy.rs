@@ -97,7 +97,9 @@ fn refuses_options_it_could_not_honour() {
             .proxy_key(PROXY_KEY)
             .upstream("https://user:pass@example.com"),
     ];
-    for path in ["k7x2qm4a", "/a?b", "/a#b", "/", "//", "", "   "] {
+    for path in [
+        "k7x2qm4a", "/a?b", "/a#b", "/", "//", "", "   ", "/a//b", "/a/../b", "/a%2Fb", "/a b",
+    ] {
         builds.push(FingerlyProxy::builder().proxy_key(PROXY_KEY).path(path));
     }
     for build in builds {
@@ -187,8 +189,10 @@ async fn passes_on_an_idempotency_key_when_the_sdk_sent_one() {
     assert_eq!(server.first().header("idempotency-key"), "abc-123");
 }
 
+/// A trailing slash on the configured path is dropped; on a request it is a
+/// different path.
 #[tokio::test]
-async fn ignores_a_trailing_slash() {
+async fn matches_the_configured_path_exactly() {
     let server = TestServer::always(identified()).await;
     let proxy = FingerlyProxy::builder()
         .proxy_key(PROXY_KEY)
@@ -198,11 +202,24 @@ async fn ignores_a_trailing_slash() {
         .build()
         .unwrap();
 
-    for path in [PATH, "/k7x2qm4a/"] {
+    assert_eq!(proxy.handle(identify(PATH)).await.status(), StatusCode::OK);
+    for path in [
+        "/k7x2qm4a/",
+        "/k7x2qm4a//",
+        "//k7x2qm4a",
+        "/k7x2qm4a/.",
+        "/./k7x2qm4a",
+        "/k7x2qm4a%2F",
+        "/%6B7x2qm4a",
+    ] {
         let response = proxy.handle(identify(path)).await;
-        assert_eq!(response.status(), StatusCode::OK, "{path} was refused");
+        assert_eq!(
+            response.status(),
+            StatusCode::NOT_FOUND,
+            "{path} was proxied"
+        );
     }
-    assert_eq!(server.request_count(), 2);
+    assert_eq!(server.request_count(), 1);
 }
 
 /// Without a path the router already chose what reaches the service, which

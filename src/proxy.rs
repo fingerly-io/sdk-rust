@@ -313,12 +313,11 @@ impl ProxyInner {
     /// Whether this request's path is the one the proxy answers.
     ///
     /// Without a configured path, whatever the router sent is answered: the
-    /// route already chose it. With one, only that exact path is, trailing
-    /// slashes aside, so nothing under it reaches Fingerly.
+    /// route already chose it. With one, only that exact path is: no trailing
+    /// or doubled slash, no dot segment, no percent-encoding (the path is
+    /// compared undecoded), and case matters.
     fn answers(&self, path: &str) -> bool {
-        self.path
-            .as_deref()
-            .is_none_or(|expected| path.trim_end_matches('/') == expected)
+        self.path.as_deref().is_none_or(|expected| path == expected)
     }
 
     /// Decides which key to present upstream.

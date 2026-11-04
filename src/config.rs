@@ -154,15 +154,26 @@ pub(crate) fn positive_duration(value: Duration, name: &str) -> Result<Duration>
     Ok(value)
 }
 
-/// Validates the path the dashboard issued and drops trailing slashes. It is
-/// matched exactly: the proxy answers that path and nothing under it.
+/// Validates the path the dashboard issued, dropping a trailing slash from the
+/// configured value. Requests are matched against it exactly: the proxy
+/// answers that path and nothing under or beside it.
 #[cfg(feature = "proxy")]
 pub(crate) fn normalize_path(value: &str) -> Result<String> {
+    let refuse = || Error::config("path must be an absolute URL path such as /k7x2qm4a");
     let path = value.trim().trim_end_matches('/');
-    if !path.starts_with('/') || path.len() < 2 || path.contains(['?', '#']) {
-        return Err(Error::config(
-            "path must be an absolute URL path such as /k7x2qm4a",
-        ));
+    let Some(rest) = path.strip_prefix('/') else {
+        return Err(refuse());
+    };
+    let unreserved = |b: u8| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~');
+    let valid = !rest.is_empty()
+        && rest.split('/').all(|segment| {
+            !segment.is_empty()
+                && segment != "."
+                && segment != ".."
+                && segment.bytes().all(unreserved)
+        });
+    if !valid {
+        return Err(refuse());
     }
     Ok(path.to_owned())
 }
