@@ -3,7 +3,9 @@
 use std::convert::Infallible;
 use std::fmt;
 use std::future::Future;
+use std::net::IpAddr;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -26,6 +28,10 @@ const DEFAULT_MAX_BODY_BYTES: usize = 1 << 20;
 /// Caps the upstream answer held for relaying. An ingest answer is a few
 /// kilobytes; anything past this is not one.
 const MAX_RELAY_BYTES: usize = 4 << 20;
+
+/// Reported, once, for a `client_ip` callback that returned no address.
+const NO_CLIENT_IP: &str = "the client IP callback returned no valid address";
+const NO_CLIENT_IP_ANSWER: &str = "The client IP callback returned no valid address";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// What this proxy reports itself as upstream; shown per proxy in the
@@ -121,7 +127,7 @@ impl std::error::Error for ProxyError {}
 ///     .client_ip(|parts| {
 ///         parts
 ///             .headers
-///             .get("cf-connecting-ip")
+///             .get("x-real-ip")
 ///             .and_then(|value| value.to_str().ok())
 ///             .unwrap_or_default()
 ///             .to_owned()
@@ -157,6 +163,8 @@ struct ProxyInner {
     http: reqwest::Client,
     /// Where failures are reported; `None` logs one line through `tracing`.
     on_error: Option<Arc<ProxyErrorHook>>,
+    /// Set once an invalid `client_ip` result has been reported.
+    reported_bad_ip: AtomicBool,
 }
 
 impl fmt::Debug for FingerlyProxy {
@@ -210,16 +218,28 @@ impl FingerlyProxy {
             return refuse(StatusCode::UNAUTHORIZED);
         };
 
+        // A `client_ip` that returns anything but one address is a bug in the
+        // integration, not something the visitor did. Nothing goes upstream,
+        // and it is reported once rather than on every request.
+        let Some(client_ip) = inner.visitor_ip(&parts) else {
+            if !inner.reported_bad_ip.swap(true, Ordering::Relaxed) {
+                inner.report(&ProxyError {
+                    status: StatusCode::INTERNAL_SERVER_ERROR,
+                    kind: ProxyErrorKind::InvalidClientIp,
+                    message: NO_CLIENT_IP.to_owned(),
+                });
+            }
+            return refuse_with(StatusCode::INTERNAL_SERVER_ERROR, NO_CLIENT_IP_ANSWER);
+        };
+
         // Refuse on the declared size first; the limited read enforces the
         // real one.
         if declared_length(&parts).is_some_and(|length| length > inner.max_body_bytes) {
             return refuse(StatusCode::PAYLOAD_TOO_LARGE);
         }
 
-        let headers = match inner.upstream_headers(&parts, &api_key) {
+        let headers = match inner.upstream_headers(&parts, &api_key, client_ip) {
             Ok(headers) => headers,
-            // A `client_ip` that cannot be a header value is a bug in the
-            // integration, not something the visitor did.
             Err(_) => return refuse(StatusCode::INTERNAL_SERVER_ERROR),
         };
 
@@ -271,6 +291,12 @@ impl FingerlyProxy {
 }
 
 impl ProxyInner {
+    /// Runs the `client_ip` callback and accepts exactly one IPv4 or IPv6
+    /// literal: no list, no port, no zone, no surrounding space.
+    fn visitor_ip(&self, parts: &Parts) -> Option<IpAddr> {
+        (self.client_ip)(parts).parse().ok()
+    }
+
     /// Hands a failure to the hook, or logs one line about it.
     fn report(&self, failure: &ProxyError) {
         match &self.on_error {
@@ -313,9 +339,13 @@ impl ProxyInner {
     ///
     /// Nothing is copied wholesale: only the body's content type, the visitor
     /// metadata Fingerly needs, and an idempotency key when the SDK sent one.
-    fn upstream_headers(&self, parts: &Parts, api_key: &str) -> Result<http::HeaderMap> {
-        let client_ip = (self.client_ip)(parts);
-        let client_ip = HeaderValue::from_str(&client_ip)
+    fn upstream_headers(
+        &self,
+        parts: &Parts,
+        api_key: &str,
+        client_ip: IpAddr,
+    ) -> Result<http::HeaderMap> {
+        let client_ip = HeaderValue::from_str(&client_ip.to_string())
             .map_err(|_| Error::config("client_ip must resolve to a plain address"))?;
 
         let mut headers = http::HeaderMap::new();
@@ -444,9 +474,12 @@ impl FingerlyProxyBuilder {
 
     /// Resolves the visitor's address. Required.
     ///
-    /// Read it from a header your own infrastructure sets, such as your load
-    /// balancer's or CDN's. Never use the left-most `X-Forwarded-For` value:
-    /// the visitor writes it.
+    /// It must return exactly one IPv4 or IPv6 address. Read it from a header
+    /// your own infrastructure sets, such as your load balancer's or CDN's,
+    /// and fall back to the TCP peer (axum's `ConnectInfo`, from the parts'
+    /// extensions). Never use the left-most `X-Forwarded-For` value: the
+    /// visitor writes it. Anything that is not one address is answered `500`
+    /// without calling Fingerly, and reported once.
     pub fn client_ip<F>(mut self, resolve: F) -> Self
     where
         F: Fn(&Parts) -> String + Send + Sync + 'static,
@@ -571,6 +604,7 @@ impl FingerlyProxyBuilder {
                 client_ip,
                 http,
                 on_error: self.on_error,
+                reported_bad_ip: AtomicBool::new(false),
             }),
         })
     }

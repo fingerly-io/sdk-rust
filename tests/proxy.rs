@@ -483,22 +483,69 @@ async fn answers_502_when_the_upstream_is_unreachable() {
     assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
 }
 
-/// A `client_ip` that cannot be a header value is a bug in the integration,
-/// and it must not become a header injection.
+/// A `client_ip` that returns anything but one address is a bug in the
+/// integration: nothing goes upstream, and it is reported once.
 #[tokio::test]
-async fn refuses_a_client_ip_that_is_not_a_plain_address() {
-    let server = TestServer::always(identified()).await;
-    let proxy = FingerlyProxy::builder()
-        .proxy_key(PROXY_KEY)
-        .path(PATH)
-        .upstream(&server.base_url)
-        .client_ip(|_| "1.2.3.4\r\nx-injected: yes".to_owned())
-        .build()
-        .unwrap();
+async fn refuses_a_client_ip_that_is_not_one_address() {
+    for address in [
+        "1.2.3.4\r\nx-injected: yes",
+        "",
+        "null",
+        "203.0.113.5, 198.51.100.7",
+        "203.0.113.5:443",
+        " 203.0.113.5",
+        "fe80::1%en0",
+        "not-an-ip",
+    ] {
+        let server = TestServer::always(identified()).await;
+        let reported = fingerly_hook::Hook::default();
+        let hook = reported.clone();
+        let proxy = FingerlyProxy::builder()
+            .proxy_key(PROXY_KEY)
+            .path(PATH)
+            .upstream(&server.base_url)
+            .client_ip(move |_| address.to_owned())
+            .on_error(move |failure| hook.lock().unwrap().push(failure.clone()))
+            .build()
+            .unwrap();
 
-    let response = proxy.handle(identify(PATH)).await;
-    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(server.request_count(), 0);
+        for _ in 0..3 {
+            let response = proxy.handle(identify(PATH)).await;
+            assert_eq!(
+                response.status(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "{address:?}"
+            );
+            assert_eq!(
+                body_of(response).await,
+                "The client IP callback returned no valid address"
+            );
+        }
+        assert_eq!(server.request_count(), 0, "{address:?} reached Fingerly");
+        let reported = reported.lock().unwrap();
+        assert_eq!(reported.len(), 1, "{address:?} was not reported once");
+        assert_eq!(reported[0].kind, fingerly::ProxyErrorKind::InvalidClientIp);
+    }
+}
+
+#[tokio::test]
+async fn forwards_a_valid_client_ip_canonically() {
+    for (given, forwarded) in [
+        ("203.0.113.5", "203.0.113.5"),
+        ("2001:DB8::1", "2001:db8::1"),
+        ("::ffff:203.0.113.5", "::ffff:203.0.113.5"),
+    ] {
+        let server = TestServer::always(identified()).await;
+        let proxy = FingerlyProxy::builder()
+            .proxy_key(PROXY_KEY)
+            .path(PATH)
+            .upstream(&server.base_url)
+            .client_ip(move |_| given.to_owned())
+            .build()
+            .unwrap();
+        assert_eq!(proxy.handle(identify(PATH)).await.status(), StatusCode::OK);
+        assert_eq!(server.first().header("x-fingerly-client-ip"), forwarded);
+    }
 }
 
 /// The callback sees the request parts, so a framework extension such as
@@ -513,7 +560,7 @@ async fn reads_the_address_from_the_request_the_integration_chose() {
         .client_ip(|parts| {
             parts
                 .headers
-                .get("cf-connecting-ip")
+                .get("x-real-ip")
                 .and_then(|value| value.to_str().ok())
                 .unwrap_or_default()
                 .to_owned()
@@ -524,7 +571,7 @@ async fn reads_the_address_from_the_request_the_integration_chose() {
     let mut request = identify(PATH);
     request
         .headers_mut()
-        .insert("cf-connecting-ip", "198.51.100.9".parse().unwrap());
+        .insert("x-real-ip", "198.51.100.9".parse().unwrap());
 
     proxy.handle(request).await;
     assert_eq!(
