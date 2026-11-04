@@ -60,7 +60,9 @@ pub use crate::client::{Fingerly, FingerlyBuilder};
 pub use crate::events::{EventListParams, EventsClient};
 #[cfg(feature = "proxy")]
 #[cfg_attr(docsrs, doc(cfg(feature = "proxy")))]
-pub use crate::proxy::{ClientIpFn, FingerlyProxy, FingerlyProxyBuilder};
+pub use crate::proxy::{
+    ClientIpFn, FingerlyProxy, FingerlyProxyBuilder, ProxyError, ProxyErrorHook, ProxyErrorKind,
+};
 
 pub use crate::errors::{ApiError, Error, Result};
 pub use crate::models::{Event, EventPage, EventTrigger, SuspectLevel};

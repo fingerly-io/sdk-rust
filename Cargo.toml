@@ -21,7 +21,7 @@ default = ["client", "proxy", "rustls"]
 # neither an HTTP stack nor an async runtime.
 client = ["dep:reqwest", "dep:tokio", "dep:url", "dep:percent-encoding"]
 # The same-origin proxy, as a tower::Service over http types.
-proxy = ["client", "dep:http", "dep:http-body", "dep:http-body-util", "dep:bytes", "dep:tower-service"]
+proxy = ["client", "dep:http", "dep:http-body", "dep:http-body-util", "dep:bytes", "dep:tower-service", "dep:tracing"]
 # TLS backend. Pick exactly one; rustls is the default.
 rustls = ["reqwest?/rustls"]
 native-tls = ["reqwest?/native-tls"]
@@ -45,6 +45,8 @@ http-body = { version = "1", optional = true }
 http-body-util = { version = "0.1", optional = true }
 bytes = { version = "1", optional = true }
 tower-service = { version = "0.3", optional = true }
+# One warning line per proxy failure when no on_error hook is set.
+tracing = { version = "0.1", default-features = false, features = ["std"], optional = true }
 
 time = { version = "0.3", default-features = false, features = ["parsing", "formatting"], optional = true }
 

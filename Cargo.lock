@@ -367,6 +367,7 @@ dependencies = [
  "time",
  "tokio",
  "tower-service",
+ "tracing",
  "url",
 ]
 

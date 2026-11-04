@@ -452,7 +452,7 @@ async fn sends_no_body_on_a_status_that_may_not_carry_one() {
 /// The documented behaviour is to give Fingerly its deadline and then answer,
 /// not to hold the browser's connection open.
 #[tokio::test]
-async fn answers_502_when_the_upstream_stalls() {
+async fn answers_504_when_the_upstream_stalls() {
     let server = TestServer::always(identified().delay(Duration::from_secs(30))).await;
     let proxy = FingerlyProxy::builder()
         .proxy_key(PROXY_KEY)
@@ -464,7 +464,8 @@ async fn answers_502_when_the_upstream_stalls() {
         .unwrap();
 
     let response = proxy.handle(identify(PATH)).await;
-    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+    assert_eq!(body_of(response).await, "Gateway timeout");
 }
 
 #[tokio::test]
@@ -610,4 +611,135 @@ fn a_proxy_never_prints_its_key() {
             .unwrap()
     );
     assert!(!printed.contains(PROXY_KEY), "{printed}");
+}
+
+/// Starts a raw upstream that answers every connection with `answer` and then
+/// keeps the socket open for `hold`, so a declared length is never met.
+async fn raw_upstream(answer: &'static [u8], hold: Duration, trickle: bool) -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        while let Ok((mut socket, _)) = listener.accept().await {
+            tokio::spawn(async move {
+                let mut buffer = [0u8; 8192];
+                let _ = socket.read(&mut buffer).await;
+                if trickle {
+                    for byte in answer {
+                        if socket.write_all(&[*byte]).await.is_err() {
+                            return;
+                        }
+                        tokio::time::sleep(Duration::from_millis(20)).await;
+                    }
+                } else {
+                    let _ = socket.write_all(answer).await;
+                }
+                tokio::time::sleep(hold).await;
+            });
+        }
+    });
+    format!("http://{address}")
+}
+
+fn proxy_to(upstream: &str, timeout: Duration, hook: fingerly_hook::Hook) -> FingerlyProxy {
+    FingerlyProxy::builder()
+        .proxy_key(PROXY_KEY)
+        .path(PATH)
+        .upstream(upstream)
+        .timeout(timeout)
+        .client_ip(|_| CLIENT_IP.to_owned())
+        .on_error(move |failure| hook.lock().unwrap().push(failure.clone()))
+        .build()
+        .unwrap()
+}
+
+mod fingerly_hook {
+    pub type Hook = std::sync::Arc<std::sync::Mutex<Vec<fingerly::ProxyError>>>;
+}
+
+#[tokio::test]
+async fn never_relays_a_truncated_answer_as_a_success() {
+    let reported = fingerly_hook::Hook::default();
+    let upstream = raw_upstream(
+        b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 100\r\n\r\n{\"request_id\":",
+        Duration::from_millis(0),
+        false,
+    )
+    .await;
+    let response = proxy_to(&upstream, Duration::from_secs(2), reported.clone())
+        .handle(identify(PATH))
+        .await;
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    assert_eq!(body_of(response).await, "Bad gateway");
+    let reported = reported.lock().unwrap();
+    assert_eq!(reported.len(), 1);
+    assert_eq!(reported[0].kind, fingerly::ProxyErrorKind::Upstream);
+    assert!(!reported[0].to_string().contains(PROXY_KEY));
+}
+
+#[tokio::test]
+async fn a_trickling_answer_cannot_stretch_the_deadline() {
+    let reported = fingerly_hook::Hook::default();
+    let upstream = raw_upstream(
+        b"HTTP/1.1 200 OK\r\ncontent-length: 40\r\n\r\n0123456789012345678901234567890123456789",
+        Duration::from_secs(5),
+        true,
+    )
+    .await;
+    let started = std::time::Instant::now();
+    let response = proxy_to(&upstream, Duration::from_millis(300), reported.clone())
+        .handle(identify(PATH))
+        .await;
+    assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+    assert!(started.elapsed() < Duration::from_secs(2));
+    assert_eq!(
+        reported.lock().unwrap()[0].kind,
+        fingerly::ProxyErrorKind::Timeout
+    );
+}
+
+#[tokio::test]
+async fn refuses_an_answer_over_4_mib() {
+    let size = (4 << 20) + 1;
+    // Declared up front, and streamed without a length.
+    let declared = TestServer::always(Canned::bytes(200, vec![b'a'; size])).await;
+    let mut chunked =
+        format!("HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\n\r\n{size:x}\r\n").into_bytes();
+    chunked.extend(vec![b'a'; size]);
+    chunked.extend_from_slice(b"\r\n0\r\n\r\n");
+    let streamed = raw_upstream(
+        Box::leak(chunked.into_boxed_slice()),
+        Duration::from_millis(0),
+        false,
+    )
+    .await;
+
+    for upstream in [declared.base_url.clone(), streamed] {
+        let reported = fingerly_hook::Hook::default();
+        let response = proxy_to(&upstream, Duration::from_secs(5), reported.clone())
+            .handle(identify(PATH))
+            .await;
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY, "{upstream}");
+        assert_eq!(
+            reported.lock().unwrap()[0].kind,
+            fingerly::ProxyErrorKind::ResponseTooLarge,
+            "{upstream}"
+        );
+    }
+}
+
+/// Dropping the service future, which is what a server does when the visitor
+/// disconnects, cancels the upstream call and reports nothing.
+#[tokio::test]
+async fn a_visitor_who_disconnects_cancels_the_upstream_call_quietly() {
+    let reported = fingerly_hook::Hook::default();
+    let server = TestServer::always(identified().delay(Duration::from_secs(30))).await;
+    let proxy = proxy_to(&server.base_url, Duration::from_secs(10), reported.clone());
+    let pending = tokio::time::timeout(Duration::from_millis(200), proxy.handle(identify(PATH)));
+    assert!(
+        pending.await.is_err(),
+        "the call should still have been waiting"
+    );
+    assert!(reported.lock().unwrap().is_empty());
 }

@@ -23,6 +23,9 @@ use crate::errors::{Error, Result};
 use crate::transport::USER_AGENT;
 
 const DEFAULT_MAX_BODY_BYTES: usize = 1 << 20;
+/// Caps the upstream answer held for relaying. An ingest answer is a few
+/// kilobytes; anything past this is not one.
+const MAX_RELAY_BYTES: usize = 4 << 20;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// What this proxy reports itself as upstream; shown per proxy in the
@@ -48,6 +51,51 @@ const RELAYED_HEADERS: [&str; 5] = [
 /// forwarded, not inspected. Framework extensions live there too, so axum's
 /// `ConnectInfo` is reachable from inside it.
 pub type ClientIpFn = dyn Fn(&Parts) -> String + Send + Sync + 'static;
+
+/// Receives every failure the proxy answered for; see
+/// [`FingerlyProxyBuilder::on_error`].
+pub type ProxyErrorHook = dyn Fn(&ProxyError) + Send + Sync + 'static;
+
+/// What went wrong, for a [`ProxyError`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ProxyErrorKind {
+    /// The deadline passed before Fingerly answered in full. Answered `504`.
+    Timeout,
+    /// Fingerly could not be reached, or its answer broke off. Answered `502`.
+    Upstream,
+    /// Fingerly's answer was over 4 MiB. Answered `502`.
+    ResponseTooLarge,
+    /// The `client_ip` callback returned something other than one address.
+    /// Answered `500`, and reported once rather than per request.
+    InvalidClientIp,
+}
+
+/// A failure the proxy answered for with a 5xx of its own. It never carries a
+/// key or a response body.
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub struct ProxyError {
+    /// The status the browser was answered.
+    pub status: StatusCode,
+    /// What went wrong.
+    pub kind: ProxyErrorKind,
+    /// A one-line description of the cause.
+    pub message: String,
+}
+
+impl fmt::Display for ProxyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "fingerly proxy: answered {}: {}",
+            self.status.as_u16(),
+            self.message
+        )
+    }
+}
+
+impl std::error::Error for ProxyError {}
 
 /// Same-origin handler for the browser SDK.
 ///
@@ -107,6 +155,8 @@ struct ProxyInner {
     client_ip: Arc<ClientIpFn>,
     /// HTTP implementation for the upstream call.
     http: reqwest::Client,
+    /// Where failures are reported; `None` logs one line through `tracing`.
+    on_error: Option<Arc<ProxyErrorHook>>,
 }
 
 impl fmt::Debug for FingerlyProxy {
@@ -173,40 +223,67 @@ impl FingerlyProxy {
             Err(_) => return refuse(StatusCode::INTERNAL_SERVER_ERROR),
         };
 
+        // One deadline covers reading the browser's body and the whole
+        // upstream exchange. A visitor who disconnects drops this future,
+        // which cancels the upstream call with it.
+        let deadline = tokio::time::Instant::now() + inner.timeout;
+        let read = Limited::new(body, inner.max_body_bytes).collect();
+        let body = match tokio::time::timeout_at(deadline, read).await {
+            Ok(Ok(collected)) => collected.to_bytes(),
+            // Streaming the read means an oversized body is cut off at the
+            // limit instead of being held in memory first. Anything else is a
+            // browser that went away mid-body.
+            Ok(Err(error)) if error.downcast_ref::<LengthLimitError>().is_some() => {
+                return refuse(StatusCode::PAYLOAD_TOO_LARGE)
+            }
+            Ok(Err(_)) => return refuse(StatusCode::BAD_REQUEST),
+            // The visitor, not Fingerly, was too slow.
+            Err(_) => return refuse(StatusCode::REQUEST_TIMEOUT),
+        };
+
         let forward = async {
-            let body = match Limited::new(body, inner.max_body_bytes).collect().await {
-                Ok(collected) => collected.to_bytes(),
-                // Streaming the read means an oversized body is cut off at the
-                // limit instead of being held in memory first. Anything else
-                // is a browser that went away mid-body.
-                Err(error) if error.downcast_ref::<LengthLimitError>().is_some() => {
-                    return refuse(StatusCode::PAYLOAD_TOO_LARGE)
-                }
-                Err(_) => return refuse(StatusCode::BAD_REQUEST),
-            };
-            match inner
+            let response = inner
                 .http
                 .post(&inner.upstream_url)
                 .headers(headers)
                 .body(body)
                 .send()
                 .await
-            {
-                Ok(response) => relay(response).await,
-                Err(_) => refuse(StatusCode::BAD_GATEWAY),
-            }
+                .map_err(|error| (ProxyErrorKind::Upstream, error.to_string()))?;
+            relay(response).await
         };
-
-        match tokio::time::timeout(inner.timeout, forward).await {
-            Ok(response) => response,
-            // The documented behaviour is to give Fingerly its deadline and
-            // then answer 502, not to hold the browser's connection open.
-            Err(_) => refuse(StatusCode::BAD_GATEWAY),
-        }
+        let failure = match tokio::time::timeout_at(deadline, forward).await {
+            Ok(Ok(response)) => return response,
+            Ok(Err((kind, message))) => ProxyError {
+                status: StatusCode::BAD_GATEWAY,
+                kind,
+                message,
+            },
+            Err(_) => ProxyError {
+                status: StatusCode::GATEWAY_TIMEOUT,
+                kind: ProxyErrorKind::Timeout,
+                message: format!("no complete answer within {:?}", inner.timeout),
+            },
+        };
+        inner.report(&failure);
+        refuse(failure.status)
     }
 }
 
 impl ProxyInner {
+    /// Hands a failure to the hook, or logs one line about it.
+    fn report(&self, failure: &ProxyError) {
+        match &self.on_error {
+            Some(hook) => hook(failure),
+            None => tracing::warn!(
+                target: "fingerly::proxy",
+                status = failure.status.as_u16(),
+                "{}",
+                failure.message
+            ),
+        }
+    }
+
     /// Whether this request's path is the one the proxy answers.
     ///
     /// Without a configured path, whatever the router sent is answered: the
@@ -330,6 +407,7 @@ pub struct FingerlyProxyBuilder {
     timeout: Option<Duration>,
     client_ip: Option<Arc<ClientIpFn>>,
     http_client_builder: Option<reqwest::ClientBuilder>,
+    on_error: Option<Arc<ProxyErrorHook>>,
 }
 
 impl fmt::Debug for FingerlyProxyBuilder {
@@ -413,6 +491,19 @@ impl FingerlyProxyBuilder {
         self
     }
 
+    /// Receives every failure the proxy answers for with a 5xx of its own:
+    /// `504` when the deadline passed, `502` for any other upstream failure,
+    /// `500` for a `client_ip` that returned no valid address (once). Without
+    /// it, each is logged as one `tracing` warning under `fingerly::proxy`. A
+    /// visitor who disconnects is not a failure and is not reported.
+    pub fn on_error<F>(mut self, hook: F) -> Self
+    where
+        F: Fn(&ProxyError) + Send + Sync + 'static,
+    {
+        self.on_error = Some(Arc::new(hook));
+        self
+    }
+
     /// Supplies the HTTP stack for the upstream call. Redirects are refused
     /// either way; see [`FingerlyBuilder::http_client_builder`].
     ///
@@ -479,6 +570,7 @@ impl FingerlyProxyBuilder {
                 timeout,
                 client_ip,
                 http,
+                on_error: self.on_error,
             }),
         })
     }
@@ -495,9 +587,18 @@ fn declared_length(parts: &Parts) -> Option<usize> {
         .ok()
 }
 
-/// Builds a plain-text refusal that never reaches Fingerly.
+/// Builds a short plain-text answer that names nobody.
 fn refuse(status: StatusCode) -> Response<Full<Bytes>> {
-    let reason = status.canonical_reason().unwrap_or("Error");
+    let reason = match status {
+        StatusCode::BAD_GATEWAY => "Bad gateway",
+        StatusCode::GATEWAY_TIMEOUT => "Gateway timeout",
+        _ => status.canonical_reason().unwrap_or("Error"),
+    };
+    refuse_with(status, reason)
+}
+
+/// Builds `status` with a one-line plain-text body, uncacheable.
+fn refuse_with(status: StatusCode, reason: &'static str) -> Response<Full<Bytes>> {
     let mut response = Response::new(Full::new(Bytes::from_static(reason.as_bytes())));
     *response.status_mut() = status;
     response.headers_mut().insert(
@@ -511,12 +612,15 @@ fn refuse(status: StatusCode) -> Response<Full<Bytes>> {
     response
 }
 
-/// Returns the upstream response to the browser, uncacheable and with only the
+/// Returns the upstream answer to the browser, uncacheable and with only the
 /// allowlisted headers.
 ///
-/// The body is always drained, inside the caller's deadline, so a stalled
-/// upstream times out instead of holding a connection open.
-async fn relay(response: reqwest::Response) -> Response<Full<Bytes>> {
+/// The body is read in full, up to 4 MiB and inside the caller's deadline,
+/// before anything is answered, so a stalled or broken upstream becomes an
+/// error rather than a truncated success.
+async fn relay(
+    mut response: reqwest::Response,
+) -> std::result::Result<Response<Full<Bytes>>, (ProxyErrorKind, String)> {
     let status = response.status();
     let mut headers = http::HeaderMap::new();
     for name in RELAYED_HEADERS {
@@ -528,9 +632,30 @@ async fn relay(response: reqwest::Response) -> Response<Full<Bytes>> {
         http::header::CACHE_CONTROL,
         HeaderValue::from_static("no-store"),
     );
-    let Ok(bytes) = response.bytes().await else {
-        return refuse(StatusCode::BAD_GATEWAY);
+    let too_large = || {
+        (
+            ProxyErrorKind::ResponseTooLarge,
+            "upstream answer exceeds 4 MiB".to_owned(),
+        )
     };
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_RELAY_BYTES as u64)
+    {
+        return Err(too_large());
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|error| (ProxyErrorKind::Upstream, error.to_string()))?
+    {
+        if body.len() + chunk.len() > MAX_RELAY_BYTES {
+            return Err(too_large());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    let bytes = Bytes::from(body);
 
     let bodiless = matches!(
         status,
@@ -539,5 +664,5 @@ async fn relay(response: reqwest::Response) -> Response<Full<Bytes>> {
     let mut relayed = Response::new(Full::new(if bodiless { Bytes::new() } else { bytes }));
     *relayed.status_mut() = status;
     *relayed.headers_mut() = headers;
-    relayed
+    Ok(relayed)
 }
