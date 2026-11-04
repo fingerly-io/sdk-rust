@@ -64,12 +64,12 @@ impl Transport {
         // Redirects are refused here rather than per request, because reqwest
         // fixes the policy when the client is built. A caller's builder is
         // accepted; a caller's finished Client is not, for exactly this reason.
-        let http = builder
-            .unwrap_or_else(reqwest::Client::builder)
-            .redirect(reqwest::redirect::Policy::none())
-            .user_agent(USER_AGENT)
-            .build()
-            .map_err(|error| Error::config(format!("could not build the HTTP client: {error}")))?;
+        let http = crate::pool::client_from(Some(
+            builder
+                .unwrap_or_else(reqwest::Client::builder)
+                .user_agent(USER_AGENT),
+        ))
+        .map_err(|error| Error::config(format!("could not build the HTTP client: {error}")))?;
 
         Ok(Transport {
             base_url: format!("{origin}/api/{api_version}"),

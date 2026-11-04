@@ -46,6 +46,8 @@ mod errors;
 #[cfg(feature = "client")]
 mod events;
 mod models;
+#[cfg(feature = "client")]
+mod pool;
 #[cfg(feature = "proxy")]
 mod proxy;
 #[cfg(feature = "client")]

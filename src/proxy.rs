@@ -584,11 +584,7 @@ impl FingerlyProxyBuilder {
         };
         let timeout = positive_duration(self.timeout.unwrap_or(DEFAULT_TIMEOUT), "timeout")?;
 
-        let http = self
-            .http_client_builder
-            .unwrap_or_else(reqwest::Client::builder)
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
+        let http = crate::pool::client_from(self.http_client_builder)
             .map_err(|error| Error::config(format!("could not build the HTTP client: {error}")))?;
 
         Ok(FingerlyProxy {

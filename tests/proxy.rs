@@ -807,3 +807,85 @@ async fn a_visitor_who_disconnects_cancels_the_upstream_call_quietly() {
     );
     assert!(reported.lock().unwrap().is_empty());
 }
+
+/// A keep-alive HTTP/1.1 upstream that counts the connections it accepts.
+async fn counting_upstream() -> (u16, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let accepted = std::sync::Arc::new(AtomicUsize::new(0));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let counter = accepted.clone();
+    tokio::spawn(async move {
+        while let Ok((mut socket, _)) = listener.accept().await {
+            counter.fetch_add(1, Ordering::Relaxed);
+            tokio::spawn(async move {
+                let mut pending = Vec::new();
+                let mut buffer = [0u8; 8192];
+                loop {
+                    let Ok(read) = socket.read(&mut buffer).await else {
+                        return;
+                    };
+                    if read == 0 {
+                        return;
+                    }
+                    pending.extend_from_slice(&buffer[..read]);
+                    // Every request carries a small body with a content-length.
+                    while let Some(end) = pending.windows(4).position(|w| w == b"\r\n\r\n") {
+                        let head = String::from_utf8_lossy(&pending[..end]).to_ascii_lowercase();
+                        let length: usize = head
+                            .lines()
+                            .find_map(|line| line.strip_prefix("content-length:"))
+                            .map(|value| value.trim().parse().unwrap())
+                            .unwrap_or(0);
+                        if pending.len() < end + 4 + length {
+                            break;
+                        }
+                        pending.drain(..end + 4 + length);
+                        tokio::time::sleep(Duration::from_millis(2)).await;
+                        let answer = b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 2\r\n\r\n{}";
+                        if socket.write_all(answer).await.is_err() {
+                            return;
+                        }
+                    }
+                }
+            });
+        }
+    });
+    (port, accepted)
+}
+
+/// The regression for the field test: a burst at 200 in flight against a
+/// hostname opened about 1,200 connections per 10,000 requests, because every
+/// connect waited on its own lookup in Tokio's blocking pool.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_burst_against_a_hostname_reuses_connections() {
+    let (port, accepted) = counting_upstream().await;
+    let proxy = FingerlyProxy::builder()
+        .proxy_key(PROXY_KEY)
+        .upstream(format!("http://localhost:{port}"))
+        .client_ip(|_| CLIENT_IP.to_owned())
+        .build()
+        .unwrap();
+    const IN_FLIGHT: usize = 200;
+    const EACH: usize = 50;
+    let workers = (0..IN_FLIGHT).map(|_| {
+        let proxy = proxy.clone();
+        tokio::spawn(async move {
+            for _ in 0..EACH {
+                assert_eq!(proxy.handle(identify(PATH)).await.status(), StatusCode::OK);
+            }
+        })
+    });
+    for worker in workers.collect::<Vec<_>>() {
+        worker.await.unwrap();
+    }
+    let opened = accepted.load(std::sync::atomic::Ordering::Relaxed);
+    assert!(
+        // Racing connects leave some spare; without the shared lookup this
+        // was about seven times the requests in flight.
+        opened <= IN_FLIGHT * 2,
+        "{} requests opened {opened} connections",
+        IN_FLIGHT * EACH
+    );
+}
