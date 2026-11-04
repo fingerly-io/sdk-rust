@@ -125,12 +125,16 @@ impl std::error::Error for ProxyError {}
 /// let proxy = FingerlyProxy::builder()
 ///     .proxy_key(std::env::var("FINGERLY_PROXY_KEY").unwrap())
 ///     .client_ip(|parts| {
+///         // The header your load balancer or CDN sets, else the TCP peer
+///         // (served with `into_make_service_with_connect_info`).
+///         if let Some(address) = parts.headers.get("x-real-ip").and_then(|v| v.to_str().ok()) {
+///             return address.to_owned();
+///         }
 ///         parts
-///             .headers
-///             .get("x-real-ip")
-///             .and_then(|value| value.to_str().ok())
+///             .extensions
+///             .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+///             .map(|info| info.0.ip().to_string())
 ///             .unwrap_or_default()
-///             .to_owned()
 ///     })
 ///     .build()?;
 ///

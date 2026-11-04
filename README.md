@@ -27,8 +27,13 @@ rejected before network access. Requests do not follow redirects. `get` and
 `list` each perform one request and never retry.
 
 `Fingerly::new` returns a `Result`, so an invalid key or option fails at
-construction and nothing is sent. The client holds a pooled connection; build
-one and clone it.
+construction and nothing is sent. The client holds a connection pool; build
+one and clone it, and every clone shares the pool. Every client and proxy in
+the process resolves names through one shared cache that performs a single
+system lookup per host at a time and reuses it for 30 seconds, so a burst of
+hundreds of requests reuses connections instead of opening one per request.
+There is nothing to tune for a busy server. `Debug` output of every SDK value
+shows keys and secrets as `[redacted]`.
 
 ## Deadlines and cancellation
 
@@ -46,20 +51,25 @@ Every call returns `fingerly::Result<T>`, whose error is one `Error` enum:
 | Variant | When |
 | --- | --- |
 | `Config` | An option was rejected. Nothing was sent, and a retry will not help. |
-| `Api` | The API answered with a non-2xx status. |
+| `Api` | The API answered with a status outside 2xx, redirects included. |
 | `Timeout` | The request deadline elapsed. |
 | `Connection` | The API could not be reached, or the connection failed mid-response. |
-| `Decode` | The body was not the JSON this SDK expects. |
+| `Decode` | The body was not the JSON this SDK expects, or was over 4 MiB. |
 
-`Error::Api` carries `status`, and optional `code`, `details` and `request_id`.
-The secret key is stripped from all three, and the response body is never
-echoed into a message.
+`Error::Api` carries `status`, and optional `code`, `details`, `request_id`
+and `retry_after`. The secret key is stripped from all of them, and the
+response body is never echoed into a message. `retry_after` is the number of
+seconds from the `Retry-After` header, also reachable as
+`error.retry_after()`; the SDK never retries a read itself.
 
 ```rust
 match fingerly.events().get(&request_id).await {
     Ok(event) => { /* … */ }
     Err(error) if error.is_event_not_found() => { /* no such request id */ }
-    Err(error) if error.status() == Some(429) => { /* back off */ }
+    Err(error) if error.status() == Some(429) => {
+        let wait = error.retry_after().unwrap_or(1); // seconds
+        /* back off for at least `wait` */
+    }
     Err(error) => return Err(error),
 }
 ```
@@ -122,8 +132,8 @@ let ok = fingerly::verify_webhook(
 Verify the exact raw bytes before decoding them: re-serialising them changes
 the digest. Signatures cover the timestamp and body. The default replay
 tolerance is five minutes, changed with `WebhookVerifier::new(secret)
-.tolerance(…)`. During a signing-secret rotation, any matching signature in
-the comma-separated header is accepted. Malformed or missing input is a `false`
+.tolerance(…)`. During a signing-secret rotation, any matching signature
+among the first 32 in the comma-separated header is accepted. Malformed or missing input is a `false`
 result, never a panic.
 
 Verification proves authenticity and freshness. It does not deduplicate, so
@@ -151,22 +161,46 @@ service at the path it issued, here `/k7x2qm4a`. `FingerlyProxy` implements
 `tower::Service` over `http::Request`, which is what axum, hyper, warp and tonic
 all take:
 
+```toml
+[dependencies]
+fingerly = "0.1"
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+```
+
 ```rust
+use std::net::SocketAddr;
+
+use axum::extract::ConnectInfo;
 use fingerly::FingerlyProxy;
 
-let proxy = FingerlyProxy::builder()
-    .proxy_key(std::env::var("FINGERLY_PROXY_KEY")?)
-    .client_ip(|parts| {
-        parts.headers
-            .get("cf-connecting-ip")
-            .and_then(|value| value.to_str().ok())
-            .unwrap_or_default()
-            .to_owned()
-    })
-    .build()?;
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let proxy = FingerlyProxy::builder()
+        .proxy_key(std::env::var("FINGERLY_PROXY_KEY")?)
+        .client_ip(|parts| {
+            // The header your load balancer or CDN sets, else the TCP peer.
+            if let Some(address) = parts.headers.get("x-real-ip").and_then(|v| v.to_str().ok()) {
+                return address.to_owned();
+            }
+            parts
+                .extensions
+                .get::<ConnectInfo<SocketAddr>>()
+                .map(|ConnectInfo(peer)| peer.ip().to_string())
+                .unwrap_or_default()
+        })
+        .build()?;
 
-let app = axum::Router::new().route_service("/k7x2qm4a", proxy);
+    let app = axum::Router::new().route_service("/k7x2qm4a", proxy);
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
+    // ConnectInfo is only there when the app is served with it.
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await?;
+    Ok(())
+}
 ```
+
+Trust that header only when traffic can reach the server through that load
+balancer or CDN alone; otherwise a visitor can set it.
 
 Then point the browser SDK at the same path:
 
@@ -186,9 +220,7 @@ other method gets `405`. Event reads need a secret key and stay unreachable
 from a browser by construction.
 
 The browser must present a public key from the same environment as the proxy
-key, or the request gets `401`. Bodies over 1 MiB get `413`. A
-Fingerly that stalls or cannot be reached gets `502` after 5 seconds rather
-than holding the browser's connection open. Only the content type, the visitor
+key, or the request gets `401`. Bodies over 1 MiB get `413`. Only the content type, the visitor
 metadata Fingerly needs, and an `Idempotency-Key` are forwarded; customer
 cookies and authorization headers never are. The proxy reports itself upstream
 as `rust/0.1.0`, which the dashboard shows per proxy.
@@ -197,10 +229,32 @@ Only `Content-Type`, `X-Request-Id`, `RateLimit-Limit`, `RateLimit-Remaining`
 and `Retry-After` are relayed back, plus `Cache-Control: no-store`, so nothing
 on the response names Fingerly.
 
+One deadline, `timeout` (5 seconds by default), covers reading the browser's
+body and the whole upstream exchange, so a trickling answer cannot stretch it.
+When it passes during the upstream call the browser gets `504`; any other
+upstream failure (refused, reset, DNS, a truncated or malformed answer, an
+answer over 4 MiB) gets `502`; a browser too slow to send its body gets `408`.
+Each carries a short `text/plain` body and `Cache-Control: no-store`. The
+answer is read in full before anything is relayed, so a broken upstream never
+reaches the browser as a `200`. A visitor who disconnects drops the service
+future, which cancels the upstream call.
+
+Each upstream failure is reported once: to `on_error` if you set one,
+otherwise as one `tracing` warning under the `fingerly::proxy` target.
+
+```rust
+let proxy = FingerlyProxy::builder()
+    .proxy_key(std::env::var("FINGERLY_PROXY_KEY")?)
+    .client_ip(|_parts| "203.0.113.7".to_owned())
+    .on_error(|failure| eprintln!("identification proxy: {failure}"))
+    .build()?;
+```
+
 `path` is optional. Leave it unset when the router already sends only the
 issued path to the service, as `route_service` does. Set it when the service
 sees more than that, as a fallback does, and the proxy answers only that path,
-exactly, trailing slashes aside; anything else gets `404`:
+exactly: a trailing or doubled slash, a dot segment, an encoded character, a
+different case or a path under it all get `404`:
 
 ```rust
 let proxy = FingerlyProxy::builder()
@@ -216,10 +270,14 @@ Do not set it under `nest_service` or any other router that strips the mount
 before the service sees it: the path would never match.
 
 > **`client_ip` is the one thing you must get right.** Resolve it from a header
-> your own infrastructure sets, such as your load balancer's or CDN's. Never
-> read the left-most `X-Forwarded-For` value: the visitor writes it. The
-> callback receives the request's `Parts`, so a framework extension such as
-> axum's `ConnectInfo` is reachable from inside it.
+> your own infrastructure sets, such as your load balancer's or CDN's, and fall
+> back to the TCP peer. Never read the left-most `X-Forwarded-For` value: the
+> visitor writes it. The callback receives the request's `Parts`, so a
+> framework extension such as axum's `ConnectInfo` is reachable from inside
+> it. It must return exactly one IPv4 or IPv6 address. Anything else (empty, a
+> list, a port) is a configuration error: the proxy answers `500` with "The
+> client IP callback returned no valid address", calls nothing upstream, and
+> reports it once.
 
 ## Features
 
