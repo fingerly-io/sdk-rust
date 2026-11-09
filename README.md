@@ -1,8 +1,7 @@
 # fingerly
 
 Server-side event reads, webhook verification and a same-origin proxy for Rust.
-Rust 1.88 or newer, async on Tokio. Version 0.1.0 is prepared for release; the
-repository is private and the crate has not been published.
+Rust 1.88 or newer, async on Tokio.
 
 ```sh
 cargo add fingerly
