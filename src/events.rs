@@ -163,6 +163,12 @@ impl EventsClient {
     /// which [`Error::is_event_not_found`] is true means it was never issued
     /// or is past retention. Neither is retried.
     pub async fn get(&self, request_id: &str) -> Result<Event> {
+        // URL parsers resolve a dot segment even when it is percent-encoded,
+        // so escaping cannot keep these in the path: `.` and the empty id
+        // would name the list route, and `..` a route above it, key attached.
+        if matches!(request_id, "" | "." | "..") {
+            return Err(Error::config("request_id is not a Fingerly request id"));
+        }
         let path = format!("/events/{}", utf8_percent_encode(request_id, PATH_SEGMENT));
         let body = self.transport.get_json(&path).await?;
         decode(body, "event")

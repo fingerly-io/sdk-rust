@@ -4,6 +4,7 @@ use std::convert::Infallible;
 use std::fmt;
 use std::future::Future;
 use std::net::IpAddr;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -114,9 +115,10 @@ impl std::error::Error for ProxyError {}
 /// visitor metadata, never passes on customer cookies or authorization
 /// headers, and relays nothing back that names Fingerly.
 ///
-/// It implements [`tower_service::Service`] over [`http::Request`], which is
-/// what axum, hyper, warp and tonic all take. Mount it at the path the
-/// dashboard issued for the proxy:
+/// It implements [`tower_service::Service`] over [`http::Request`], which axum
+/// mounts directly and hyper serves through `hyper_util`. Anything else calls
+/// [`FingerlyProxy::handle`]. Mount it at the path the dashboard issued for
+/// the proxy:
 ///
 /// ```no_run
 /// # fn build() -> fingerly::Result<axum::Router> {
@@ -296,15 +298,22 @@ impl FingerlyProxy {
 
 impl ProxyInner {
     /// Runs the `client_ip` callback and accepts exactly one IPv4 or IPv6
-    /// literal: no list, no port, no zone, no surrounding space.
+    /// literal: no list, no port, no zone, no surrounding space. A panic in
+    /// the callback is the same integration bug as a wrong value, and the
+    /// visitor is owed the same answer rather than a dropped connection.
     fn visitor_ip(&self, parts: &Parts) -> Option<IpAddr> {
-        (self.client_ip)(parts).parse().ok()
+        catch_unwind(AssertUnwindSafe(|| (self.client_ip)(parts)))
+            .ok()?
+            .parse()
+            .ok()
     }
 
-    /// Hands a failure to the hook, or logs one line about it.
+    /// Hands a failure to the hook, or logs one line about it. The answer is
+    /// already decided by now, so a panicking hook must not cost the browser
+    /// that answer.
     fn report(&self, failure: &ProxyError) {
         match &self.on_error {
-            Some(hook) => hook(failure),
+            Some(hook) => drop(catch_unwind(AssertUnwindSafe(|| hook(failure)))),
             None => tracing::warn!(
                 target: "fingerly::proxy",
                 status = failure.status.as_u16(),

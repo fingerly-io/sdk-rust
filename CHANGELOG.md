@@ -30,5 +30,12 @@ Changes made during pre-release testing:
   yet; `retry_after` is set). `is_event_not_found()`, with the new
   `ApiError::is_not_found()`, still matches only `event_not_found` (never
   issued, or past retention). Neither is retried.
+- `events().get` refuses an empty, `.` or `..` request id as `Error::Config`.
+  Dot segments are resolved even when percent-encoded, so these would have
+  sent the secret key to another route.
+- A non-2xx read answer is always `Error::Api` with its status and
+  `retry_after`, even when its body is over 4 MiB or breaks off.
+- A panic in `client_ip` is answered `500` and reported once, like an invalid
+  return value, and a panic in `on_error` no longer loses the browser's answer.
 - The package no longer ships `.cargo/config.toml` or `.gitignore`, and the
   lockfile no longer pins a yanked crate.

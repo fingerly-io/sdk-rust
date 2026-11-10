@@ -108,15 +108,18 @@ impl Transport {
         let request_id = header_text(&response, "x-request-id");
         let retry_after = header_text(&response, "retry-after")
             .and_then(|value| parse_retry_after(&value, std::time::SystemTime::now()));
-        let body = self.read_capped(response).await?;
+        let body = self.read_capped(response).await;
 
         if !status.is_success() {
-            let mut error = self.api_error(status.as_u16(), &body);
+            // The status line is the answer. An error page too large to read,
+            // or one that breaks off, must not turn it into a decode or
+            // connection failure and lose the status and Retry-After.
+            let mut error = self.api_error(status.as_u16(), body.as_deref().unwrap_or_default());
             error.request_id = error.request_id.or(request_id.map(|id| self.redact(&id)));
             error.retry_after = retry_after;
             return Err(Error::Api(error));
         }
-        serde_json::from_slice(&body)
+        serde_json::from_slice(&body?)
             .map_err(|error| Error::decode(self.redact(&error.to_string())))
     }
 

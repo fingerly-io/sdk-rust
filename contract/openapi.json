@@ -3,6 +3,10 @@
     "schemas": {
       "AttestationChallengeOut": {
         "properties": {
+          "app_attest": {
+            "description": "Whether this key has an Apple app ID configured for App Attest",
+            "type": "boolean"
+          },
           "challenge": {
             "description": "Base64-encoded one-use attestation nonce",
             "type": "string"
@@ -138,6 +142,10 @@
             "type": "string"
           },
           "platform": {
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why enrichment did not happen, on an unavailable event",
             "type": "string"
           },
           "request_id": {
@@ -325,7 +333,7 @@
             "type": "boolean"
           },
           "reason": {
-            "description": "Why enrichment did not happen",
+            "description": "Why enrichment did not happen. Only answered to a secret key; a browser or app reads it on the server-side event read",
             "type": "string"
           },
           "request_id": {
@@ -337,11 +345,11 @@
             "type": "string"
           },
           "suspect_level": {
-            "description": "low, medium or high",
+            "description": "low, medium or high. Absent whenever suspect_score is",
             "type": "string"
           },
           "suspect_score": {
-            "description": "The weighted sum of the signals that fired",
+            "description": "The weighted sum of the signals that fired. Absent when the event was not scored, or from a browser, an app, a proxy or a hosted domain when the key withholds it",
             "format": "int32",
             "type": [
               "integer",
@@ -349,7 +357,7 @@
             ]
           },
           "triggers": {
-            "description": "What fired, and what each was worth",
+            "description": "What fired, and what each was worth. Only answered to a secret key called directly; everyone else reads them on the server-side event read, webhooks and the dashboard",
             "items": {
               "$ref": "#/components/schemas/IdentifyTriggerOut"
             },
@@ -391,13 +399,16 @@
             "type": "string"
           },
           "weight": {
+            "description": "What this signal added to the score",
             "format": "int64",
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [
-          "signal",
-          "weight"
+          "signal"
         ],
         "type": "object"
       },
@@ -736,6 +747,10 @@
           "platform": {
             "type": "string"
           },
+          "reason": {
+            "description": "Why enrichment did not happen, on an unavailable event",
+            "type": "string"
+          },
           "request_id": {
             "type": "string"
           },
@@ -822,7 +837,7 @@
       "SDKInfo": {
         "properties": {
           "platform": {
-            "description": "The SDK that collected these signals",
+            "description": "The SDK that collected these signals. Bound to how the request authenticated; a contradiction is normalised, not trusted",
             "type": "string"
           },
           "version": {
@@ -838,6 +853,24 @@
       },
       "SDKKeyOut": {
         "properties": {
+          "allowed_android_packages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "allowed_android_signers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "allowed_apple_app_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "allowed_origins": {
             "items": {
               "type": "string"
@@ -860,6 +893,10 @@
               "string",
               "null"
             ]
+          },
+          "hide_client_score": {
+            "description": "Whether suspect_score and suspect_level are withheld from a browser, an app, a proxy and a hosted domain",
+            "type": "boolean"
           },
           "id": {
             "type": "string"
@@ -890,6 +927,10 @@
           "project_id": {
             "type": "string"
           },
+          "require_attestation": {
+            "description": "Whether native reports without verified hardware attestation are refused",
+            "type": "boolean"
+          },
           "revoked_at": {
             "format": "date-time",
             "type": [
@@ -906,15 +947,20 @@
           }
         },
         "required": [
+          "allowed_android_packages",
+          "allowed_android_signers",
+          "allowed_apple_app_ids",
           "allowed_origins",
           "created_at",
           "environment",
+          "hide_client_score",
           "id",
           "kind",
           "last4",
           "name",
           "prefix",
           "project_id",
+          "require_attestation",
           "status"
         ],
         "type": "object"
@@ -1316,7 +1362,7 @@
   "paths": {
     "/api/v1/attestation/challenge": {
       "post": {
-        "description": "Issues a one-time, five-minute challenge bound to the authenticated key. The Android SDK has the device keystore attest to it and includes the attestation in its identify request.",
+        "description": "Issues a one-time, five-minute challenge bound to the authenticated key. Android has the device keystore attest to it and iOS signs it with App Attest; either way the evidence goes in the identify request, and a report that does not carry one of these challenges is never treated as proven.",
         "operationId": "requestAttestationChallenge",
         "responses": {
           "200": {
@@ -1348,6 +1394,16 @@
               }
             },
             "description": "The organization this key belongs to is not accepting traffic"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Challenges are being requested faster than the rate limit allows"
           },
           "503": {
             "content": {
@@ -1703,7 +1759,7 @@
     },
     "/api/v1/identify": {
       "post": {
-        "description": "Submits the signal report a client SDK collected and answers with the complete verdict: the request ID, the visitor ID and its confidence, and the suspect score, level and triggers. There is no second call to make.\n\nThe client SDKs build and send this request. `signals` is produced by them and is not a public contract. Send an `Idempotency-Key` header, and the same value on every retry, so a retried identification is answered and charged once.\n\nThe `X-Request-Id` response header names this HTTP exchange, for support and logs. It is not the `request_id` in the body, which names the identification and is what `GET /events/{request_id}` reads.",
+        "description": "Submits the signal report a client SDK collected and answers with the request ID, the visitor ID and its confidence. There is no second call to make.\n\nA browser, an app, a proxy and a hosted domain also receive `suspect_score` and `suspect_level`, unless the key withholds them, and never `triggers`. A secret key called directly from a backend receives the score, the level and the `triggers`.\n\nThe client SDKs build and send this request. `signals` is produced by them and is not a public contract. Send an `Idempotency-Key` header, and the same value on every retry, so a retried identification is answered and charged once.\n\nThe `X-Request-Id` response header names this HTTP exchange, for support and logs. It is not the `request_id` in the body, which names the identification and is what `GET /events/{request_id}` reads.",
         "operationId": "identifyVisitor",
         "requestBody": {
           "content": {
@@ -1815,7 +1871,7 @@
     },
     "/api/v1/ingest": {
       "post": {
-        "description": "The one URL the client SDKs and every first-party proxy post to. A body with a `token` is a deferred report and is answered `202` with `request_id` and `duplicate`, exactly as the deferred report route answers. Any other body is an identification and is answered `200` with the complete verdict, exactly as the identify route answers.\n\nIt exists so a proxy can forward everything it receives to a single path, and so the SDK can post both calls to one path of the customer's choosing, with nothing appended that a content blocker could match across sites.\n\nThe `X-Request-Id` response header names this HTTP exchange, for support and logs. It is not the `request_id` in the body, which names the identification and is what `GET /events/{request_id}` reads.",
+        "description": "The one URL the client SDKs and every first-party proxy post to. A body with a `token` is a deferred report and is answered `202` with `request_id` and `duplicate`, exactly as the deferred report route answers. Any other body is an identification and is answered `200` exactly as the identify route answers.\n\nIt exists so a proxy can forward everything it receives to a single path, and so the SDK can post both calls to one path of the customer's choosing, with nothing appended that a content blocker could match across sites.\n\nThe `X-Request-Id` response header names this HTTP exchange, for support and logs. It is not the `request_id` in the body, which names the identification and is what `GET /events/{request_id}` reads.",
         "operationId": "submitFromClientSdk",
         "requestBody": {
           "content": {
@@ -3279,7 +3335,29 @@
             "application/json": {
               "schema": {
                 "properties": {
+                  "allowed_android_packages": {
+                    "description": "Android package names, such as com.example.app",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "allowed_android_signers": {
+                    "description": "SHA-256 signing certificate digests, 64 hex characters",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "allowed_apple_app_ids": {
+                    "description": "Apple app IDs: Team ID, a dot, then the bundle identifier",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
                   "allowed_origins": {
+                    "description": "Scheme and host, no path. A public key names at least one origin, Android package or Apple app ID",
                     "items": {
                       "type": "string"
                     },
@@ -3295,6 +3373,10 @@
                       "string",
                       "null"
                     ]
+                  },
+                  "hide_client_score": {
+                    "description": "Withhold suspect_score and suspect_level from a browser, an app, a proxy and a hosted domain. Defaults to false",
+                    "type": "boolean"
                   },
                   "kind": {
                     "description": "public or secret",
@@ -3384,6 +3466,299 @@
         ],
         "x-category": "Management: keys",
         "x-title": "Issue an SDK key"
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/sdk-keys/{sdk_key_id}/apps": {
+      "put": {
+        "description": "Replaces each list: Android package names, SHA-256 signing certificate digests in hex, and Apple app IDs (Team ID, a dot, the bundle identifier). An empty list means not configured.",
+        "operationId": "replaceNativeAppsPublicKeyMayBeUsedFrom",
+        "parameters": [
+          {
+            "description": "The organization the key belongs to",
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The key to scope",
+            "in": "path",
+            "name": "sdk_key_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The project the key belongs to",
+            "in": "query",
+            "name": "project_id",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "allowed_android_packages": {
+                    "description": "Android package names, such as com.example.app. Empty means not configured",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "allowed_android_signers": {
+                    "description": "SHA-256 signing certificate digests, 64 hex characters. Empty means not configured",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "allowed_apple_app_ids": {
+                    "description": "Apple app IDs: Team ID, a dot, then the bundle identifier. Empty means not configured",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "require_attestation": {
+                    "description": "Refuse native reports whose hardware attestation did not verify. Leave out to keep the current setting",
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SDKKeyOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The management key's role does not allow this"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The key is revoked"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An entry is not valid, or the key is secret"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Replace the native apps a public key may be used from",
+        "tags": [
+          "Management API"
+        ],
+        "x-category": "Management: keys",
+        "x-title": "Set SDK key apps"
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/sdk-keys/{sdk_key_id}/client-response": {
+      "put": {
+        "description": "With `hide_score` true, a browser, an app, a proxy and a hosted domain using this key get no `suspect_score` and no `suspect_level`; both fields are absent from the answer. The event is still scored and stored, and a secret key called directly, the event read, webhooks and the dashboard still see everything. Takes effect on the next request.",
+        "operationId": "setWhatKeyPublicCallersAreTold",
+        "parameters": [
+          {
+            "description": "The organization the key belongs to",
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The key to change",
+            "in": "path",
+            "name": "sdk_key_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The project the key belongs to",
+            "in": "query",
+            "name": "project_id",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "hide_score": {
+                    "description": "True to withhold suspect_score and suspect_level from a browser, an app, a proxy and a hosted domain. The event is still scored and stored, and a secret key called directly still sees everything",
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SDKKeyOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The management key's role does not allow this"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The key is revoked"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "hide_score is missing"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Set what a key's public callers are told",
+        "tags": [
+          "Management API"
+        ],
+        "x-category": "Management: keys",
+        "x-title": "Set SDK key client response"
       }
     },
     "/api/v1/management/organizations/{organization_id}/sdk-keys/{sdk_key_id}/origins": {

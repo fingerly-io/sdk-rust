@@ -194,8 +194,8 @@ alone never can, so nobody can spoof them.
 
 Create a proxy in the dashboard (**Integration > Proxy keys**), then mount the
 service at the path it issued, here `/k7x2qm4a`. `FingerlyProxy` implements
-`tower::Service` over `http::Request`, which is what axum, hyper, warp and tonic
-all take:
+`tower::Service` over `http::Request`, which axum mounts directly and hyper
+serves through `hyper_util`:
 
 ```toml
 [dependencies]
@@ -244,8 +244,15 @@ Then point the browser SDK at the same path:
 const fingerly = await load({ apiKey: 'fly_pk_…', endpoints: '/k7x2qm4a' })
 ```
 
-For a framework that does not speak `tower`, `proxy.handle(request).await`
-takes an `http::Request` and returns an `http::Response` directly.
+For a framework that does not speak `tower`, such as actix-web, warp or Rocket,
+`proxy.handle(request).await` takes an `http::Request` and returns an
+`http::Response` directly. Those frameworks hand you the body already read, so
+rebuild the request around it, keep the raw request target as its URI, and set
+`.path(…)`: those routers can also match percent-encoded, trailing-slash or
+doubled-slash forms of the path, and the proxy compares the raw target exactly.
+Give the framework's own body limit room for
+`max_body_bytes` (actix-web's `PayloadConfig` defaults to 256 KiB), and bound
+its body read yourself, because `timeout` only starts once `handle` is called.
 
 ### What the proxy does
 

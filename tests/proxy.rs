@@ -545,6 +545,52 @@ async fn refuses_a_client_ip_that_is_not_one_address() {
     }
 }
 
+/// An `unwrap` on a missing header is the likeliest way to write this callback
+/// wrongly. It is the same mistake as returning nothing, so it gets the same
+/// answer instead of a connection dropped under the visitor.
+#[tokio::test]
+async fn a_panicking_client_ip_is_answered_like_an_invalid_one() {
+    let server = TestServer::always(identified()).await;
+    let reported = fingerly_hook::Hook::default();
+    let hook = reported.clone();
+    let proxy = FingerlyProxy::builder()
+        .proxy_key(PROXY_KEY)
+        .path(PATH)
+        .upstream(&server.base_url)
+        .client_ip(|_| panic!("the header was not there"))
+        .on_error(move |failure| hook.lock().unwrap().push(failure.clone()))
+        .build()
+        .unwrap();
+
+    for _ in 0..2 {
+        let response = proxy.handle(identify(PATH)).await;
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            body_of(response).await,
+            "The client IP callback returned no valid address"
+        );
+    }
+    assert_eq!(server.request_count(), 0);
+    assert_eq!(reported.lock().unwrap().len(), 1);
+}
+
+/// The hook runs after the answer is decided, so a bug in it must not cost the
+/// browser that answer.
+#[tokio::test]
+async fn a_panicking_error_hook_does_not_lose_the_answer() {
+    let proxy = FingerlyProxy::builder()
+        .proxy_key(PROXY_KEY)
+        .path(PATH)
+        .upstream("http://127.0.0.1:9")
+        .client_ip(|_| CLIENT_IP.to_owned())
+        .on_error(|_| panic!("the hook is broken"))
+        .build()
+        .unwrap();
+
+    let response = proxy.handle(identify(PATH)).await;
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+}
+
 #[tokio::test]
 async fn forwards_a_valid_client_ip_canonically() {
     for (given, forwarded) in [

@@ -42,6 +42,19 @@ async fn escapes_the_request_id_in_the_path() {
     assert_eq!(request.query, "");
 }
 
+/// A dot segment is resolved even when percent-encoded, so escaping cannot
+/// keep it in the path. Sent as it stands, `..` would carry the secret key to
+/// a route that is not an event at all.
+#[tokio::test]
+async fn refuses_a_request_id_that_would_leave_the_event_path() {
+    let server = TestServer::always(Canned::json(200, event_body("x"))).await;
+    for id in ["", ".", ".."] {
+        let error = client(&server).events().get(id).await.unwrap_err();
+        assert!(matches!(error, Error::Config { .. }), "{id:?}");
+    }
+    assert_eq!(server.request_count(), 0);
+}
+
 /// `None` means unscored and must never be read as zero.
 #[tokio::test]
 async fn an_unscored_event_is_not_a_zero() {

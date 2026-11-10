@@ -190,6 +190,51 @@ async fn reports_the_status_of_an_unparsable_error_body() {
     assert!(!error.to_string().contains("upstream"));
 }
 
+/// The status line already said what happened, so an error page too big to
+/// read is still that error rather than a decode failure.
+#[tokio::test]
+async fn reports_the_status_of_an_error_body_over_4_mib() {
+    let server = TestServer::always(
+        Canned::bytes(503, vec![b'x'; (4 << 20) + 1]).header("retry-after", "3"),
+    )
+    .await;
+
+    let error = client(&server).events().get("req_1").await.unwrap_err();
+    assert_eq!(error.status(), Some(503));
+    assert_eq!(error.retry_after(), Some(3));
+}
+
+/// Likewise an error body that breaks off is still that error, not a
+/// connection failure the caller might treat as retryable.
+#[tokio::test]
+async fn reports_the_status_of_an_error_body_that_breaks_off() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut request = [0u8; 8192];
+        let _ = socket.read(&mut request).await;
+        let _ = socket
+            .write_all(
+                b"HTTP/1.1 500 Internal Server Error\r\nretry-after: 4\r\n\
+                  content-length: 100\r\n\r\n{\"err",
+            )
+            .await;
+    });
+
+    let error = Fingerly::builder(SECRET_KEY)
+        .endpoint(format!("http://{address}"))
+        .build()
+        .unwrap()
+        .events()
+        .get("req_1")
+        .await
+        .unwrap_err();
+    assert_eq!(error.status(), Some(500));
+    assert_eq!(error.retry_after(), Some(4));
+}
+
 /// Anything an error carries to a log is scrubbed of the key, including a code
 /// or trace id the API echoed it into.
 #[tokio::test]
