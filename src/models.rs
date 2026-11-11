@@ -41,6 +41,10 @@ pub struct Event {
 
     /// The deployment the event was recorded in.
     pub environment: String,
+    /// The Fingerly project the event belongs to, as a UUID string. `None`
+    /// when the server predates projects.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
     /// The scoring profile applied. It differs from [`Event::sdk_platform`]:
     /// `react-native-ios` reports itself as such and is scored as `ios`.
     pub platform: String,
