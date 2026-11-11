@@ -84,7 +84,7 @@ pub fn event_body(request_id: &str) -> String {
     format!(
         r#"{{"request_id":"{request_id}","visitor_id":"vis_1","occurred_at":"2026-09-18T08:00:00Z",
             "state":"enriched","environment":"production","platform":"web","sdk_platform":"web",
-            "sdk_version":"1.0.0","ip_address":"203.0.113.7","suspect_score":12,
+            "sdk_version":"1.0.0","ip_network":"203.0.113.0/24","suspect_score":12,
             "suspect_level":"low","triggers":[],"has_document":false}}"#
     )
 }

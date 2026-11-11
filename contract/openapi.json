@@ -129,7 +129,8 @@
           "has_document": {
             "type": "boolean"
           },
-          "ip_address": {
+          "ip_network": {
+            "description": "The network the request came from: an IPv4 /24 or an IPv6 /40, such as 203.0.113.0/24",
             "type": "string"
           },
           "occurred_at": {
@@ -199,7 +200,6 @@
         "required": [
           "environment",
           "has_document",
-          "ip_address",
           "occurred_at",
           "platform",
           "request_id",
@@ -716,15 +716,11 @@
           "country_name": {
             "type": "string"
           },
-          "deferred_signals": {
-            "description": "The deferred report attached to this request, when one arrived. Its contents are not a public contract.",
-            "type": "object"
-          },
           "device_kind": {
             "type": "string"
           },
           "document": {
-            "description": "The archived submission as Fingerly stored it, with the threshold and weights profile that scored it. Present when has_document is true. Its contents are not a public contract.",
+            "description": "What Fingerly keeps of the submission, present when has_document is true: the schema, request id, time, SDK, IP network, the city-level IP answer, the risk score and triggers, attestation and the velocity decisions. Never the raw signals, the user agent or the address. Its contents are not a public contract.",
             "type": [
               "object",
               "null"
@@ -736,7 +732,8 @@
           "has_document": {
             "type": "boolean"
           },
-          "ip_address": {
+          "ip_network": {
+            "description": "The network the request came from: an IPv4 /24 or an IPv6 /40, such as 203.0.113.0/24",
             "type": "string"
           },
           "occurred_at": {
@@ -806,7 +803,6 @@
         "required": [
           "environment",
           "has_document",
-          "ip_address",
           "occurred_at",
           "platform",
           "request_id",
@@ -1984,6 +1980,9 @@
           }
         },
         "security": [
+          {
+            "publicKey": []
+          },
           {
             "secretKey": []
           }

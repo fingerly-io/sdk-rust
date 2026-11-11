@@ -11,7 +11,7 @@
         "platform": "web",
         "sdk_platform": "web",
         "sdk_version": "0.1.0",
-        "ip_address": "203.0.113.10",
+        "ip_network": "203.0.113.0/24",
         "suspect_score": 0,
         "suspect_level": "low",
         "triggers": [],
@@ -32,7 +32,7 @@
         "platform": "web",
         "sdk_platform": "web",
         "sdk_version": "0.1.0",
-        "ip_address": "203.0.113.10",
+        "ip_network": "203.0.113.0/24",
         "suspect_score": null,
         "triggers": [],
         "has_document": false
@@ -52,7 +52,7 @@
         "platform": "web",
         "sdk_platform": "web",
         "sdk_version": "0.1.0",
-        "ip_address": "203.0.113.10",
+        "ip_network": "203.0.113.0/24",
         "suspect_score": 0,
         "suspect_level": "low",
         "triggers": [],
@@ -61,24 +61,11 @@
           "schema": 1,
           "request_id": "0199a963-e400-7000-8000-000000000001",
           "occurred_at": "2026-09-17T12:00:00Z",
-          "organization_id": "tenant-test",
-          "project_id": "",
-          "sdk_key_id": "",
-          "environment": "development",
           "sdk": {
             "platform": "",
             "version": ""
           },
-          "client_ip": "203.0.113.10",
-          "signals": null
-        },
-        "deferred_signals": {
-          "fonts": {
-            "status": "ok",
-            "value": [
-              "Arial"
-            ]
-          }
+          "ip_network": "203.0.113.0/24"
         }
       },
       "name": "archived",
@@ -98,7 +85,7 @@
             "platform": "web",
             "sdk_platform": "web",
             "sdk_version": "0.1.0",
-            "ip_address": "203.0.113.10",
+            "ip_network": "203.0.113.0/24",
             "suspect_score": 0,
             "suspect_level": "low",
             "triggers": [],
