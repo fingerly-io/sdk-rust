@@ -106,6 +106,12 @@ async fn reads_every_event_fixture() {
         assert_eq!(event.request_id, fixture.body["request_id"]);
         assert_eq!(event.visitor_id, fixture.body["visitor_id"]);
         assert!(!event.occurred_at.is_empty(), "{}", fixture.name);
+        assert_eq!(
+            event.project_id.as_deref(),
+            fixture.body.get("project_id").and_then(|p| p.as_str()),
+            "{}",
+            fixture.name
+        );
 
         // A fixture without a score must not decode as zero.
         match fixture.body.get("suspect_score") {
@@ -160,6 +166,12 @@ async fn reads_every_page_fixture() {
         assert_eq!(page.rows.len(), rows.len(), "{}", fixture.name);
         for (decoded, expected) in page.rows.iter().zip(rows) {
             assert_eq!(decoded.request_id, expected["request_id"]);
+            assert_eq!(
+                decoded.project_id.as_deref(),
+                expected.get("project_id").and_then(|p| p.as_str()),
+                "{}",
+                fixture.name
+            );
         }
     }
 }

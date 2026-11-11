@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- `Event::project_id` exposes the Fingerly project an event belongs to, on
+  single reads and listing rows. It is `None` from servers older than projects.
+- The vendored contract snapshot adds `project_id` to event fixtures and to the
+  webhook test payloads, which webhooks carry as `data.project_id`.
+
 ## 0.1.0
 
 First release: event reads, webhook verification and the same-origin proxy.

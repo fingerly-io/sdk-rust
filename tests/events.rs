@@ -73,6 +73,36 @@ async fn an_unscored_event_is_not_a_zero() {
     assert_eq!(event.suspect_level, None);
 }
 
+/// The project an event belongs to is exposed when the server sends it.
+#[tokio::test]
+async fn exposes_the_project_an_event_belongs_to() {
+    let server = TestServer::always(Canned::json(
+        200,
+        r#"{"request_id":"req_1","visitor_id":"vis_1","occurred_at":"2026-09-18T08:00:00Z",
+            "state":"enriched","environment":"production","platform":"web","sdk_platform":"web",
+            "sdk_version":"1.0.0","ip_address":"203.0.113.7","suspect_score":3,
+            "project_id":"0199a963-e400-7000-8000-0000000000a1",
+            "triggers":[],"has_document":false}"#,
+    ))
+    .await;
+
+    let event = client(&server).events().get("req_1").await.unwrap();
+    assert_eq!(
+        event.project_id.as_deref(),
+        Some("0199a963-e400-7000-8000-0000000000a1")
+    );
+}
+
+/// An older server sends no `project_id`; the event still decodes.
+#[tokio::test]
+async fn an_event_without_a_project_still_decodes() {
+    let server = TestServer::always(Canned::json(200, event_body("req_1"))).await;
+    let event = client(&server).events().get("req_1").await.unwrap();
+
+    assert_eq!(event.request_id, "req_1");
+    assert_eq!(event.project_id, None);
+}
+
 /// A field the API adds after this build shipped is still reachable.
 #[tokio::test]
 async fn keeps_the_response_body_as_it_arrived() {

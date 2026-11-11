@@ -144,6 +144,10 @@
           "platform": {
             "type": "string"
           },
+          "project_id": {
+            "description": "The project the event belongs to",
+            "type": "string"
+          },
           "reason": {
             "description": "Why enrichment did not happen, on an unavailable event",
             "type": "string"
@@ -745,6 +749,10 @@
             "type": "string"
           },
           "platform": {
+            "type": "string"
+          },
+          "project_id": {
+            "description": "The project the event belongs to",
             "type": "string"
           },
           "reason": {

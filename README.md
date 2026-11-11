@@ -119,6 +119,9 @@ past retention.
 The archived `document` arrives moments after the event itself, so check
 `has_document` rather than assuming it is there.
 
+`Event::project_id` names the Fingerly project the event belongs to, as a UUID
+string. It is `None` when the server is older than projects.
+
 ## Verify a backend action
 
 Read the event with a server-only key. Check that its tag matches your action,
@@ -126,6 +129,8 @@ that it is recent, that its environment is correct, and that it was scored.
 Apply your own policy to the server's verdict. Do not authorize an action using
 scores or visitor identifiers supplied by the browser. Tags correlate events;
 they do not replace your application's authentication or replay protection.
+Never put a personal identifier (user ID, email, install ID, advertising ID) in
+a tag: the server keeps tags in long-lived rollups.
 
 ```rust
 use fingerly::{Error, Event, Fingerly};
@@ -176,6 +181,9 @@ Verification proves authenticity and freshness. It does not deduplicate, so
 persist processed `WebhookEvent::id` values as well. `WebhookEvent` decodes the
 envelope every delivery shares and leaves `data` raw, so a new event type needs
 no SDK upgrade.
+`identification.completed` and `visitor.suspect` carry `data.project_id`;
+`identification.refused` carries it only when the refused request named a known
+key.
 
 Webhook verification needs neither an HTTP stack nor an async runtime, so
 `default-features = false` leaves a build that pulls in neither:
