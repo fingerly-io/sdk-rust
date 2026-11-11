@@ -62,7 +62,7 @@ async fn an_unscored_event_is_not_a_zero() {
         200,
         r#"{"request_id":"req_1","visitor_id":"vis_1","occurred_at":"2026-09-18T08:00:00Z",
             "state":"unavailable","environment":"production","platform":"web","sdk_platform":"web",
-            "sdk_version":"1.0.0","ip_address":"203.0.113.7","suspect_score":null,
+            "sdk_version":"1.0.0","ip_network":"203.0.113.0/24","suspect_score":null,
             "triggers":[],"has_document":false}"#,
     ))
     .await;
@@ -80,7 +80,7 @@ async fn keeps_the_response_body_as_it_arrived() {
         200,
         r#"{"request_id":"req_1","visitor_id":"vis_1","occurred_at":"2026-09-18T08:00:00Z",
             "state":"enriched","environment":"production","platform":"web","sdk_platform":"web",
-            "sdk_version":"1.0.0","ip_address":"203.0.113.7","suspect_score":3,
+            "sdk_version":"1.0.0","ip_network":"203.0.113.0/24","suspect_score":3,
             "triggers":[],"has_document":false,"invented_later":"still here"}"#,
     ))
     .await;
