@@ -11,15 +11,108 @@
             "description": "Base64-encoded one-use attestation nonce",
             "type": "string"
           },
+          "device_check": {
+            "description": "Whether to send a DeviceCheck token with the App Attest evidence",
+            "type": "boolean"
+          },
           "expires_at": {
             "description": "When the nonce becomes unusable",
             "format": "date-time",
             "type": "string"
+          },
+          "play_integrity": {
+            "description": "Whether to send a Play Integrity token bound to this challenge",
+            "type": "boolean"
           }
         },
         "required": [
           "challenge",
           "expires_at"
+        ],
+        "type": "object"
+      },
+      "AttestationCredentialOut": {
+        "properties": {
+          "client_email": {
+            "description": "Google only",
+            "type": "string"
+          },
+          "cloud_project_number": {
+            "description": "Google only",
+            "format": "int64",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "daily_budget": {
+            "description": "Google only",
+            "format": "int64",
+            "type": "integer"
+          },
+          "device_check_enabled": {
+            "description": "Apple only",
+            "type": "boolean"
+          },
+          "fingerprint": {
+            "description": "Lowercase hex SHA-256 of the public key, to recognise the key without the secret",
+            "type": "string"
+          },
+          "key_id": {
+            "description": "Apple only",
+            "type": "string"
+          },
+          "last_error": {
+            "description": "A short token for the last refusal from Apple or Google, such as apple-401",
+            "type": "string"
+          },
+          "last_error_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_used_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider": {
+            "description": "apple or google-play",
+            "type": "string"
+          },
+          "team_id": {
+            "description": "Apple only",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "created_at",
+          "fingerprint",
+          "provider",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "AttestationCredentialsOut": {
+        "properties": {
+          "credentials": {
+            "items": {
+              "$ref": "#/components/schemas/AttestationCredentialOut"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "credentials"
         ],
         "type": "object"
       },
@@ -36,6 +129,47 @@
           "endpoint",
           "secret"
         ],
+        "type": "object"
+      },
+      "DeviceCheckQueryOut": {
+        "properties": {
+          "bit0": {
+            "type": "boolean"
+          },
+          "bit1": {
+            "type": "boolean"
+          },
+          "found": {
+            "description": "False when Apple holds no bits for the device",
+            "type": "boolean"
+          },
+          "last_update": {
+            "description": "When the bits last changed, YYYY-MM",
+            "type": "string"
+          }
+        },
+        "required": [
+          "bit0",
+          "bit1",
+          "found"
+        ],
+        "type": "object"
+      },
+      "DeviceCheckWriteOut": {
+        "properties": {
+          "bit0": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "bit1": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "ErrorBody": {
@@ -316,7 +450,7 @@
             "type": "object"
           },
           "tag": {
-            "description": "An opaque value echoed back on the event",
+            "description": "An opaque value echoed back on the event and kept in long-lived rollups. A label for your own systems, such as a client or app name; never a personal identifier (user ID, email, install ID or advertising ID)",
             "type": "string"
           }
         },
@@ -324,6 +458,10 @@
       },
       "IdentifyOut": {
         "properties": {
+          "app_attest_key": {
+            "description": "unknown when the report asserted with an App Attest key the server does not hold; the iOS SDK then attests a new key on its next collection. Absent otherwise",
+            "type": "string"
+          },
           "deferred_token": {
             "description": "Short-lived capability for the deferred signal report",
             "type": "string"
@@ -432,7 +570,7 @@
             "type": "object"
           },
           "tag": {
-            "description": "An opaque value echoed back on the event. Identify only",
+            "description": "An opaque value echoed back on the event and kept in long-lived rollups; never a personal identifier. Identify only",
             "type": "string"
           },
           "token": {
@@ -495,6 +633,123 @@
           "name",
           "organization_id",
           "role"
+        ],
+        "type": "object"
+      },
+      "ProjectArchivedOut": {
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "archived",
+          "id"
+        ],
+        "type": "object"
+      },
+      "ProjectOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "organization_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "created_at",
+          "id",
+          "name",
+          "organization_id",
+          "status"
+        ],
+        "type": "object"
+      },
+      "ProjectPurgeOut": {
+        "properties": {
+          "archive_copies_expire_by": {
+            "description": "When the last archived copy of the project's data, written before per-project archiving, expires; absent if the project never sent traffic",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "completed_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "next_attempt_at": {
+            "description": "When a pending pass runs next",
+            "format": "date-time",
+            "type": "string"
+          },
+          "pass": {
+            "description": "first, ten minutes after the request, or sweep, a day after the first finished",
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "status": {
+            "description": "pending, then done",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "next_attempt_at",
+          "pass",
+          "project_id",
+          "status"
+        ],
+        "type": "object"
+      },
+      "ProjectPurgesOut": {
+        "properties": {
+          "purges": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectPurgeOut"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "purges"
+        ],
+        "type": "object"
+      },
+      "ProjectsOut": {
+        "properties": {
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectOut"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "projects"
         ],
         "type": "object"
       },
@@ -1101,6 +1356,173 @@
         ],
         "type": "object"
       },
+      "UsageDayOut": {
+        "properties": {
+          "billable": {
+            "description": "How much of it was on a production key",
+            "format": "int64",
+            "type": "integer"
+          },
+          "billed_micros": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "checks": {
+            "description": "Everything that arrived, including what was refused",
+            "format": "int64",
+            "type": "integer"
+          },
+          "date": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "rejected": {
+            "description": "Rate-limited or out of credit",
+            "format": "int64",
+            "type": "integer"
+          },
+          "settled": {
+            "type": "boolean"
+          },
+          "test": {
+            "description": "Counted and never billed",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "billable",
+          "billed_micros",
+          "checks",
+          "date",
+          "rejected",
+          "settled",
+          "test"
+        ],
+        "type": "object"
+      },
+      "UsageKeyOut": {
+        "properties": {
+          "billable": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "billed_micros": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "checks": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "description": "public or secret",
+            "type": "string"
+          },
+          "last4": {
+            "type": "string"
+          },
+          "last_used_at": {
+            "description": "Written best-effort and batched",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "prefix": {
+            "type": "string"
+          },
+          "rejected": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "billable",
+          "billed_micros",
+          "checks",
+          "environment",
+          "id",
+          "rejected"
+        ],
+        "type": "object"
+      },
+      "UsageOut": {
+        "properties": {
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/UsageDayOut"
+            },
+            "type": "array"
+          },
+          "from": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "keys": {
+            "items": {
+              "$ref": "#/components/schemas/UsageKeyOut"
+            },
+            "type": "array"
+          },
+          "pending_checks": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "pending_days": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "pending_micros": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "rate_per_check_micros": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "rate_per_lookup_micros": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "settled_through": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "to": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "days",
+          "from",
+          "keys",
+          "pending_checks",
+          "pending_days",
+          "pending_micros",
+          "rate_per_check_micros",
+          "rate_per_lookup_micros",
+          "to"
+        ],
+        "type": "object"
+      },
       "VisitorErasureOut": {
         "properties": {
           "completed_at": {
@@ -1407,7 +1829,7 @@
                 }
               }
             },
-            "description": "Challenges are being requested faster than the rate limit allows"
+            "description": "Challenges are being requested faster than the key's, the address's or the organization's rate limit allows; retry after Retry-After"
           },
           "503": {
             "content": {
@@ -1520,6 +1942,16 @@
             },
             "description": "No usable secret SDK key was presented"
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The organization is suspended or closed"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1589,6 +2021,16 @@
             },
             "description": "No usable secret SDK key was presented"
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The organization is suspended or closed"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -1631,6 +2073,250 @@
         ],
         "x-category": "Server API",
         "x-title": "Get an event"
+      }
+    },
+    "/api/v1/events/{request_id}/device-check": {
+      "put": {
+        "description": "Spends the DeviceCheck token held for this iOS event, once, to set bit0, bit1 or both with Apple, using your project's own Apple key. A bit left out keeps its value. The bits mean what you decide; Fingerly never reads them. Tokens are held for one hour, only for events whose App Attest evidence covered them, and only when DeviceCheck is switched on for the project's Apple credential.",
+        "operationId": "setDeviceDevicecheckBits",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "bit0": {
+                    "description": "The value to set for the first bit. Leave out to keep it",
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "bit1": {
+                    "description": "The value to set for the second bit. Leave out to keep it",
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceCheckWriteOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable secret SDK key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The organization is suspended or closed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "`device_check_not_held`: no token is held for that event"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "`device_check_spent`, `device_check_busy` or `credential_unavailable`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "`bits_required` or `apple_rejected`"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "`device_check_unavailable`: retry within the hour"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "secretKey": []
+          }
+        ],
+        "summary": "Set the device's DeviceCheck bits",
+        "tags": [
+          "Server API"
+        ],
+        "x-category": "Server API",
+        "x-title": "Write an event's DeviceCheck bits"
+      }
+    },
+    "/api/v1/events/{request_id}/device-check/query": {
+      "post": {
+        "description": "Spends the DeviceCheck token held for this iOS event, once, to read the device's two bits from Apple. A token spent on a read cannot also write; to mark a device, write instead.",
+        "operationId": "readDeviceDevicecheckBits",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceCheckQueryOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable secret SDK key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The organization is suspended or closed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "`device_check_not_held`: no token is held for that event"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "`device_check_spent`, `device_check_busy` or `credential_unavailable`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "`device_check_unavailable`: retry within the hour"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "secretKey": []
+          }
+        ],
+        "summary": "Read the device's DeviceCheck bits",
+        "tags": [
+          "Server API"
+        ],
+        "x-category": "Server API",
+        "x-title": "Read an event's DeviceCheck bits"
       }
     },
     "/api/v1/events/{request_id}/supplement": {
@@ -1834,7 +2520,7 @@
                 }
               }
             },
-            "description": "The organization is over its rate limit"
+            "description": "The SDK key or the organization is over its rate limit; retry after Retry-After. A secret key called from a backend is also told which limit in Fingerly-RateLimit-Scope"
           },
           "503": {
             "content": {
@@ -1956,7 +2642,7 @@
                 }
               }
             },
-            "description": "The organization is over its rate limit"
+            "description": "The SDK key or the organization is over its rate limit; retry after Retry-After. A secret key called from a backend is also told which limit in Fingerly-RateLimit-Scope"
           },
           "503": {
             "content": {
@@ -2028,7 +2714,7 @@
                 }
               }
             },
-            "description": "The management key's role does not allow this"
+            "description": "The management key's role does not allow this, or its organization is suspended or closed"
           },
           "404": {
             "content": {
@@ -2453,6 +3139,1303 @@
         ],
         "x-category": "Management: hosted domains",
         "x-title": "Check a hosted domain"
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/projects": {
+      "get": {
+        "description": "Every project of the organization, archived ones included.",
+        "operationId": "listProjects",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectsOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The management key's role does not allow this, or its organization is suspended or closed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "List projects",
+        "tags": [
+          "Management API"
+        ],
+        "x-category": "Management: projects",
+        "x-title": "List projects"
+      },
+      "post": {
+        "description": "One project per client app or site keeps its visitors, velocity, keys and data apart from every other project. `name` is 1 to 128 characters and unique in the organization.",
+        "operationId": "createProject",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectOut"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Only an admin key may create a project"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The name is taken, or the organization is at its project limit"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Create a project",
+        "tags": [
+          "Management API"
+        ],
+        "x-category": "Management: projects",
+        "x-title": "Create a project"
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/projects/{project_id}": {
+      "delete": {
+        "description": "Revokes the project's keys, so its traffic stops at once, and keeps its data. There is no un-archive.",
+        "operationId": "archiveProject",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectArchivedOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Only an admin key may archive a project"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Archive a project",
+        "tags": [
+          "Management API"
+        ],
+        "x-category": "Management: projects",
+        "x-title": "Archive a project"
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/projects/{project_id}/attestation-credentials": {
+      "get": {
+        "description": "Metadata only: the Team ID, key ID or Cloud project number, a fingerprint of the public key and the last error the platform returned. The secret is never returned.",
+        "operationId": "listProjectAppleAndGoogleCredentials",
+        "parameters": [
+          {
+            "description": "The organization the project belongs to",
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The project the credentials are for",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttestationCredentialsOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The management key's role does not allow this, or its organization is suspended or closed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "List a project's Apple and Google credentials",
+        "tags": [
+          "Management API"
+        ],
+        "x-category": "Management: platform credentials",
+        "x-title": "List platform credentials"
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/projects/{project_id}/attestation-credentials/apple": {
+      "delete": {
+        "description": "Takes effect everywhere within ten minutes. Owner or admin only.",
+        "operationId": "deleteProjectAppleKey",
+        "parameters": [
+          {
+            "description": "The organization the project belongs to",
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The project the credentials are for",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The management key's role does not allow this, or its organization is suspended or closed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The project has no Apple credential"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Delete a project's Apple key",
+        "tags": [
+          "Management API"
+        ],
+        "x-category": "Management: platform credentials",
+        "x-title": "Delete the Apple credential"
+      },
+      "put": {
+        "description": "The key (a .p8 file with DeviceCheck enabled) is used only for this project's apps: to refresh App Attest receipts and, with device_check_enabled, to read and write DeviceCheck bits on your backend's request. It is sealed on arrival and never returned. Owner or admin only.",
+        "operationId": "uploadOrReplaceProjectAppleKey",
+        "parameters": [
+          {
+            "description": "The organization the project belongs to",
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The project the credential is for",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "device_check_enabled": {
+                    "description": "Ask iOS apps for a DeviceCheck token and hold it for this project's backend for one hour. Defaults to false",
+                    "type": "boolean"
+                  },
+                  "key_id": {
+                    "description": "The 10-character ID of the key, as App Store Connect shows it",
+                    "type": "string"
+                  },
+                  "private_key": {
+                    "description": "The PEM contents of the .p8 file. The key must have DeviceCheck enabled. Never returned",
+                    "type": "string"
+                  },
+                  "team_id": {
+                    "description": "The 10-character Apple Team ID that owns the apps",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttestationCredentialOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The management key's role does not allow this, or its organization is suspended or closed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The key or an identifier is not valid"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Credentials cannot be stored on this deployment"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Upload or replace a project's Apple key",
+        "tags": [
+          "Management API"
+        ],
+        "x-category": "Management: platform credentials",
+        "x-title": "Set the Apple credential"
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/projects/{project_id}/attestation-credentials/google-play": {
+      "delete": {
+        "description": "Takes effect everywhere within ten minutes. Owner or admin only.",
+        "operationId": "deleteProjectGoogleServiceAccount",
+        "parameters": [
+          {
+            "description": "The organization the project belongs to",
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The project the credentials are for",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The management key's role does not allow this, or its organization is suspended or closed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The project has no Google Play credential"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Delete a project's Google service account",
+        "tags": [
+          "Management API"
+        ],
+        "x-category": "Management: platform credentials",
+        "x-title": "Delete the Google Play credential"
+      },
+      "put": {
+        "description": "A service account in the Google Cloud project linked to the app in Play Console, used only to decode this project's Play Integrity tokens, within daily_budget decodes a day. Sealed on arrival and never returned. Owner or admin only.",
+        "operationId": "uploadOrReplaceProjectGoogleServiceAccount",
+        "parameters": [
+          {
+            "description": "The organization the project belongs to",
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The project the credential is for",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "cloud_project_number": {
+                    "description": "The number of the Google Cloud project linked to the app in Play Console",
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  "daily_budget": {
+                    "description": "Play Integrity decodes Fingerly may spend per UTC day. Defaults to 4000, leaving the rest of Google's 10000 to your own use",
+                    "format": "int64",
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "service_account": {
+                    "description": "The JSON key file of a service account in that project. Never returned",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttestationCredentialOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The management key's role does not allow this, or its organization is suspended or closed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The service account or a field is not valid"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Credentials cannot be stored on this deployment"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Upload or replace a project's Google service account",
+        "tags": [
+          "Management API"
+        ],
+        "x-category": "Management: platform credentials",
+        "x-title": "Set the Google Play credential"
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/projects/{project_id}/installs/{platform}/{install_id}": {
+      "delete": {
+        "description": "Erases the visitor an iOS or Android app install resolved to in this project, for a data subject's request that names the app and the install rather than a visitor ID. `install_id` is the identifier the Fingerly SDK stored in the app. Visitors are never shared between projects, so this finds the project's visitor and no other; the erasure then proceeds as one by visitor ID, and the answer lists it.\n\n404 `install_not_found` means no stored identity maps to the install, so no data can be linked to it.",
+        "operationId": "eraseVisitorOfOneAppInstall",
+        "parameters": [
+          {
+            "description": "The organization",
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The project the app belongs to",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "ios or android",
+            "in": "path",
+            "name": "platform",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The install identifier the Fingerly SDK stored in the app",
+            "in": "path",
+            "name": "install_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisitorErasuresOut"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Only an admin key may erase a visitor"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such project, or no visitor holds that install"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The platform is not ios or android"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Erase the visitor of one app install",
+        "tags": [
+          "Management API"
+        ],
+        "x-category": "Management: visitors",
+        "x-title": "Erase an app install"
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/projects/{project_id}/purge": {
+      "get": {
+        "operationId": "listProjectPurgePasses",
+        "parameters": [
+          {
+            "description": "The organization",
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The project",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectPurgesOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Only an admin key may purge a project"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "List a project's purge passes",
+        "tags": [
+          "Management API"
+        ],
+        "x-category": "Management: projects",
+        "x-title": "Get a project purge"
+      },
+      "post": {
+        "description": "Owner or admin, or an admin management key. Archives the project if it is not archived yet - its keys are revoked at once, so no new data arrives - and deletes all of its data: its archived submissions, its stored identifications and rollups, its visitor identities, the webhook events that name it, its keys' attestation state and its Apple and Google platform credentials. There is no undo.\n\nIt runs twice: ten minutes after the request, and again a day after the first pass finished, for anything delivered late. Asking while a pass is pending returns it; asking after the purge finished queues another pass. Usage counts and the project's revoked keys are kept, because invoices and usage reports name them.\n\n`archive_copies_expire_by` is when the last archived copy written before per-project archiving expires.",
+        "operationId": "deleteAllOfProjectData",
+        "parameters": [
+          {
+            "description": "The organization",
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The project",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectPurgeOut"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Only an admin key may purge a project"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Delete all of a project's data",
+        "tags": [
+          "Management API"
+        ],
+        "x-category": "Management: projects",
+        "x-title": "Purge a project"
+      }
+    },
+    "/api/v1/management/organizations/{organization_id}/projects/{project_id}/usage": {
+      "get": {
+        "description": "The same report for the keys of one project, for re-billing one client.",
+        "operationId": "readOneProjectMeteredTrafficPerDayAndPerKey",
+        "parameters": [
+          {
+            "description": "The organization to report on",
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The project to report on",
+            "in": "query",
+            "name": "project_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "First day, YYYY-MM-DD. Defaults to 30 days ago",
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Last day, exclusive, YYYY-MM-DD. Defaults to tomorrow",
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "all, live or test",
+            "in": "query",
+            "name": "scope",
+            "schema": {
+              "default": "all",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Only an admin key may read usage"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such project"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "This deployment has no warehouse"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Read one project's metered traffic, per day and per key",
+        "tags": [
+          "Management API"
+        ],
+        "x-category": "Management: usage",
+        "x-title": "Get project usage"
       }
     },
     "/api/v1/management/organizations/{organization_id}/proxy-credentials": {
@@ -2917,7 +4900,7 @@
                 }
               }
             },
-            "description": "The management key's role does not allow this"
+            "description": "The management key's role does not allow this, or its organization is suspended or closed"
           },
           "404": {
             "content": {
@@ -3429,7 +5412,7 @@
                 }
               }
             },
-            "description": "The management key's role does not allow this"
+            "description": "The management key's role does not allow this, or its organization is suspended or closed"
           },
           "404": {
             "content": {
@@ -3576,7 +5559,7 @@
                 }
               }
             },
-            "description": "The management key's role does not allow this"
+            "description": "The management key's role does not allow this, or its organization is suspended or closed"
           },
           "404": {
             "content": {
@@ -3712,7 +5695,7 @@
                 }
               }
             },
-            "description": "The management key's role does not allow this"
+            "description": "The management key's role does not allow this, or its organization is suspended or closed"
           },
           "404": {
             "content": {
@@ -3848,7 +5831,7 @@
                 }
               }
             },
-            "description": "The management key's role does not allow this"
+            "description": "The management key's role does not allow this, or its organization is suspended or closed"
           },
           "404": {
             "content": {
@@ -3965,7 +5948,7 @@
                 }
               }
             },
-            "description": "The management key's role does not allow this"
+            "description": "The management key's role does not allow this, or its organization is suspended or closed"
           },
           "404": {
             "content": {
@@ -4074,7 +6057,7 @@
                 }
               }
             },
-            "description": "The management key's role does not allow this"
+            "description": "The management key's role does not allow this, or its organization is suspended or closed"
           },
           "404": {
             "content": {
@@ -4394,6 +6377,139 @@
         "x-title": "Save key platform weights"
       }
     },
+    "/api/v1/management/organizations/{organization_id}/usage": {
+      "get": {
+        "description": "The organization's usage, as the console's usage screen reads it: whole UTC days, half-open, `scope` all, live or test, with billed amounts and settled days.",
+        "operationId": "readMeteredTrafficPerDayAndPerKey",
+        "parameters": [
+          {
+            "description": "The organization to report on",
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The project to report on",
+            "in": "query",
+            "name": "project_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "First day, YYYY-MM-DD. Defaults to 30 days ago",
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Last day, exclusive, YYYY-MM-DD. Defaults to tomorrow",
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "all, live or test",
+            "in": "query",
+            "name": "scope",
+            "schema": {
+              "default": "all",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable management key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Only an admin key may read usage"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such resource in the key's organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "This deployment has no warehouse"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "managementKey": []
+          }
+        ],
+        "summary": "Read metered traffic, per day and per key",
+        "tags": [
+          "Management API"
+        ],
+        "x-category": "Management: usage",
+        "x-title": "Get usage"
+      }
+    },
     "/api/v1/management/organizations/{organization_id}/visitor-erasures": {
       "get": {
         "description": "The last hundred erasures, newest first, each pending or done.",
@@ -4649,7 +6765,7 @@
                 }
               }
             },
-            "description": "The management key's role does not allow this"
+            "description": "The management key's role does not allow this, or its organization is suspended or closed"
           },
           "404": {
             "content": {
@@ -4737,7 +6853,7 @@
                 }
               }
             },
-            "description": "The management key's role does not allow this"
+            "description": "The management key's role does not allow this, or its organization is suspended or closed"
           },
           "404": {
             "content": {
@@ -4851,7 +6967,7 @@
                 }
               }
             },
-            "description": "The management key's role does not allow this"
+            "description": "The management key's role does not allow this, or its organization is suspended or closed"
           },
           "404": {
             "content": {
@@ -4940,7 +7056,7 @@
                 }
               }
             },
-            "description": "The management key's role does not allow this"
+            "description": "The management key's role does not allow this, or its organization is suspended or closed"
           },
           "404": {
             "content": {
@@ -5080,7 +7196,7 @@
                 }
               }
             },
-            "description": "The management key's role does not allow this"
+            "description": "The management key's role does not allow this, or its organization is suspended or closed"
           },
           "404": {
             "content": {
@@ -5184,7 +7300,7 @@
                 }
               }
             },
-            "description": "The management key's role does not allow this"
+            "description": "The management key's role does not allow this, or its organization is suspended or closed"
           },
           "404": {
             "content": {
@@ -5300,7 +7416,7 @@
                 }
               }
             },
-            "description": "The management key's role does not allow this"
+            "description": "The management key's role does not allow this, or its organization is suspended or closed"
           },
           "404": {
             "content": {
@@ -5396,7 +7512,7 @@
                 }
               }
             },
-            "description": "The management key's role does not allow this"
+            "description": "The management key's role does not allow this, or its organization is suspended or closed"
           },
           "404": {
             "content": {
@@ -5475,7 +7591,7 @@
                 }
               }
             },
-            "description": "The management key's role does not allow this"
+            "description": "The management key's role does not allow this, or its organization is suspended or closed"
           },
           "404": {
             "content": {
@@ -5536,7 +7652,10 @@
     "Client API",
     "Server API",
     "Management: keys",
+    "Management: projects",
+    "Management: usage",
     "Management: hosted domains",
+    "Management: platform credentials",
     "Management: visitors",
     "Management: webhooks",
     "Management: risk weights"
