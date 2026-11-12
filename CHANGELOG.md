@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
 - `Event::project_id` exposes the Fingerly project an event belongs to, on
   single reads and listing rows. It is `None` when the server does not send it.
