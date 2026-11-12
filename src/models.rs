@@ -2,9 +2,8 @@
 //!
 //! They mirror the server schema with two deliberate differences:
 //! [`Event::suspect_score`] is `Option<i32>` where `None` means unscored and
-//! must never be read as zero, and the archived `document` and
-//! `deferred_signals` stay opaque rather than becoming a second public
-//! contract.
+//! must never be read as zero, and the archived `document` stays opaque
+//! rather than becoming a second public contract.
 
 use serde::{Deserialize, Serialize};
 
@@ -41,6 +40,10 @@ pub struct Event {
 
     /// The deployment the event was recorded in.
     pub environment: String,
+    /// The Fingerly project the event belongs to, as a UUID string. `None`
+    /// when the server predates projects.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
     /// The scoring profile applied. It differs from [`Event::sdk_platform`]:
     /// `react-native-ios` reports itself as such and is scored as `ios`.
     pub platform: String,
@@ -62,8 +65,10 @@ pub struct Event {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
 
-    /// The address the identification arrived from.
-    pub ip_address: String,
+    /// The network the request came from: an IPv4 /24 or an IPv6 /40, such
+    /// as `203.0.113.0/24`. The API never returns the address itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ip_network: Option<String>,
     /// ISO 3166-1 alpha-2 country the address resolved to.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub country_code: Option<String>,
@@ -113,15 +118,15 @@ pub struct Event {
     #[serde(default)]
     pub has_document: bool,
 
-    /// The archived submission with the threshold and weights that scored it.
-    /// Present when [`Event::has_document`] is true and the archive could be
-    /// read. Its contents are deliberately opaque, not a public contract.
+    /// An allow-listed view of the archived submission: schema, request id,
+    /// time, SDK platform and version, the IP network, the classified IP
+    /// (network, city-level location, detections) or its error, the risk,
+    /// attestation and velocity results. It carries no raw signals, user
+    /// agent or address. Present when [`Event::has_document`] is true and the
+    /// archive could be read. Its contents are deliberately opaque, not a
+    /// public contract.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub document: Option<serde_json::Value>,
-    /// The deferred report attached to this request, when one arrived. Also
-    /// opaque.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deferred_signals: Option<serde_json::Value>,
 
     /// The response body exactly as it arrived, so a field the API adds after
     /// this SDK was released is still reachable without an upgrade.

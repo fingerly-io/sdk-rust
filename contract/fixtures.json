@@ -3,6 +3,7 @@
     {
       "body": {
         "request_id": "0199a963-e400-7000-8000-000000000001",
+        "project_id": "0199a963-e400-7000-8000-0000000000a1",
         "visitor_id": "visitor-test",
         "occurred_at": "2026-09-17T12:00:00Z",
         "state": "enriched",
@@ -10,7 +11,7 @@
         "platform": "web",
         "sdk_platform": "web",
         "sdk_version": "0.1.0",
-        "ip_address": "203.0.113.10",
+        "ip_network": "203.0.113.0/24",
         "suspect_score": 0,
         "suspect_level": "low",
         "triggers": [],
@@ -23,6 +24,7 @@
     {
       "body": {
         "request_id": "0199a963-e400-7000-8000-000000000001",
+        "project_id": "0199a963-e400-7000-8000-0000000000a1",
         "visitor_id": "visitor-test",
         "occurred_at": "2026-09-17T12:00:00Z",
         "state": "unavailable",
@@ -30,7 +32,7 @@
         "platform": "web",
         "sdk_platform": "web",
         "sdk_version": "0.1.0",
-        "ip_address": "203.0.113.10",
+        "ip_network": "203.0.113.0/24",
         "suspect_score": null,
         "triggers": [],
         "has_document": false
@@ -42,6 +44,7 @@
     {
       "body": {
         "request_id": "0199a963-e400-7000-8000-000000000001",
+        "project_id": "0199a963-e400-7000-8000-0000000000a1",
         "visitor_id": "visitor-test",
         "occurred_at": "2026-09-17T12:00:00Z",
         "state": "enriched",
@@ -49,7 +52,7 @@
         "platform": "web",
         "sdk_platform": "web",
         "sdk_version": "0.1.0",
-        "ip_address": "203.0.113.10",
+        "ip_network": "203.0.113.0/24",
         "suspect_score": 0,
         "suspect_level": "low",
         "triggers": [],
@@ -58,24 +61,11 @@
           "schema": 1,
           "request_id": "0199a963-e400-7000-8000-000000000001",
           "occurred_at": "2026-09-17T12:00:00Z",
-          "organization_id": "tenant-test",
-          "project_id": "",
-          "sdk_key_id": "",
-          "environment": "development",
           "sdk": {
             "platform": "",
             "version": ""
           },
-          "client_ip": "203.0.113.10",
-          "signals": null
-        },
-        "deferred_signals": {
-          "fonts": {
-            "status": "ok",
-            "value": [
-              "Arial"
-            ]
-          }
+          "ip_network": "203.0.113.0/24"
         }
       },
       "name": "archived",
@@ -87,6 +77,7 @@
         "rows": [
           {
             "request_id": "0199a963-e400-7000-8000-000000000001",
+            "project_id": "0199a963-e400-7000-8000-0000000000a1",
             "visitor_id": "visitor-test",
             "occurred_at": "2026-09-17T12:00:00Z",
             "state": "enriched",
@@ -94,7 +85,7 @@
             "platform": "web",
             "sdk_platform": "web",
             "sdk_version": "0.1.0",
-            "ip_address": "203.0.113.10",
+            "ip_network": "203.0.113.0/24",
             "suspect_score": 0,
             "suspect_level": "low",
             "triggers": [],
@@ -203,33 +194,33 @@
   "webhooks": [
     {
       "name": "current",
-      "payload": "{\"id\":\"evt_contract\",\"type\":\"identification.completed\",\"data\":{\"request_id\":\"0199a963-e400-7000-8000-000000000001\"}}",
+      "payload": "{\"id\":\"evt_contract\",\"type\":\"identification.completed\",\"data\":{\"request_id\":\"0199a963-e400-7000-8000-000000000001\",\"project_id\":\"0199a963-e400-7000-8000-0000000000a1\"}}",
       "secret": "whsec_contract_current",
-      "signature": "sha256=f222a3199dae906df4608030c73d742410e40f003bd7b25292db11edb306b9d4",
+      "signature": "sha256=cba83ffd4a95e203b68a3ca967fde148975766425da50f6d5f8dc973994823e5",
       "timestamp": "1789646400",
       "valid": true
     },
     {
       "name": "rotation_current",
-      "payload": "{\"id\":\"evt_contract\",\"type\":\"identification.completed\",\"data\":{\"request_id\":\"0199a963-e400-7000-8000-000000000001\"}}",
+      "payload": "{\"id\":\"evt_contract\",\"type\":\"identification.completed\",\"data\":{\"request_id\":\"0199a963-e400-7000-8000-000000000001\",\"project_id\":\"0199a963-e400-7000-8000-0000000000a1\"}}",
       "secret": "whsec_contract_current",
-      "signature": "sha256=f222a3199dae906df4608030c73d742410e40f003bd7b25292db11edb306b9d4,sha256=4d373c753341ff05adb96484a1ff629204fffb1889582a7ac905d61c60de35b5",
+      "signature": "sha256=cba83ffd4a95e203b68a3ca967fde148975766425da50f6d5f8dc973994823e5,sha256=ca64b6fb3b42c701bb03d7394d8a2111bfb4b3d364de1fa24ee3edd59e59bbd5",
       "timestamp": "1789646400",
       "valid": true
     },
     {
       "name": "rotation_previous",
-      "payload": "{\"id\":\"evt_contract\",\"type\":\"identification.completed\",\"data\":{\"request_id\":\"0199a963-e400-7000-8000-000000000001\"}}",
+      "payload": "{\"id\":\"evt_contract\",\"type\":\"identification.completed\",\"data\":{\"request_id\":\"0199a963-e400-7000-8000-000000000001\",\"project_id\":\"0199a963-e400-7000-8000-0000000000a1\"}}",
       "secret": "whsec_contract_previous",
-      "signature": "sha256=f222a3199dae906df4608030c73d742410e40f003bd7b25292db11edb306b9d4,sha256=4d373c753341ff05adb96484a1ff629204fffb1889582a7ac905d61c60de35b5",
+      "signature": "sha256=cba83ffd4a95e203b68a3ca967fde148975766425da50f6d5f8dc973994823e5,sha256=ca64b6fb3b42c701bb03d7394d8a2111bfb4b3d364de1fa24ee3edd59e59bbd5",
       "timestamp": "1789646400",
       "valid": true
     },
     {
       "name": "tampered",
-      "payload": "{\"id\":\"evt_contract\",\"type\":\"identification.completed\",\"data\":{\"request_id\":\"0199a963-e400-7000-8000-000000000001\"}} ",
+      "payload": "{\"id\":\"evt_contract\",\"type\":\"identification.completed\",\"data\":{\"request_id\":\"0199a963-e400-7000-8000-000000000001\",\"project_id\":\"0199a963-e400-7000-8000-0000000000a1\"}} ",
       "secret": "whsec_contract_current",
-      "signature": "sha256=f222a3199dae906df4608030c73d742410e40f003bd7b25292db11edb306b9d4",
+      "signature": "sha256=cba83ffd4a95e203b68a3ca967fde148975766425da50f6d5f8dc973994823e5",
       "timestamp": "1789646400",
       "valid": false
     }
