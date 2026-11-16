@@ -2,6 +2,12 @@
 
 ## 0.3.0
 
+- `Fingerly::device_check()` reads and writes the DeviceCheck bits of the
+  device behind an iOS event: `query(request_id)` returns `DeviceCheckBits`,
+  `write(request_id, DeviceCheckWrite)` returns `DeviceCheckWriteResult`. A
+  `503`, a timeout or a connection failure is retried twice with the identical
+  request, and `Error` has a predicate for each DeviceCheck code, with
+  `apple_status()` for `apple_rejected`.
 - Refreshed the vendored v3 OpenAPI and contract fixtures, removing retired
   deferred supplement schemas and routes, and added `Event::reason`,
   `Event::is_identifiable()`, `Event::parse_document()`, `EventDocument`,

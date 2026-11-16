@@ -166,10 +166,7 @@ impl EventsClient {
         // URL parsers resolve a dot segment even when it is percent-encoded,
         // so escaping cannot keep these in the path: `.` and the empty id
         // would name the list route, and `..` a route above it, key attached.
-        if matches!(request_id, "" | "." | "..") {
-            return Err(Error::config("request_id is not a Fingerly request id"));
-        }
-        let path = format!("/events/{}", utf8_percent_encode(request_id, PATH_SEGMENT));
+        let path = event_path(request_id)?;
         let body = self.transport.get_json(&path).await?;
         decode(body, "event")
     }
@@ -194,6 +191,20 @@ impl EventsClient {
             .await?;
         decode(body, "events")
     }
+}
+
+/// The escaped path of one event, `/events/{request_id}`.
+pub(crate) fn event_path(request_id: &str) -> Result<String> {
+    // URL parsers resolve a dot segment even when it is percent-encoded, so
+    // escaping cannot keep these in the path: `.` and the empty id would name
+    // the list route, and `..` a route above it, key attached.
+    if matches!(request_id, "" | "." | "..") {
+        return Err(Error::config("request_id is not a Fingerly request id"));
+    }
+    Ok(format!(
+        "/events/{}",
+        utf8_percent_encode(request_id, PATH_SEGMENT)
+    ))
 }
 
 /// Decodes a response body, keeping the original alongside the typed value.

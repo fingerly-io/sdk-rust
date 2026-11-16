@@ -432,3 +432,39 @@ fn attestation_reads_attest_skipped_and_downgrade() {
     assert_eq!(attestation.attest_skipped.as_deref(), Some("timeout"));
     assert!(attestation.downgrade);
 }
+
+/// The DeviceCheck routes and shapes the client calls are the ones the
+/// contract publishes.
+#[test]
+fn device_check_routes_match_the_contract() {
+    let raw = std::fs::read(contract_dir().join("openapi.json")).expect("read openapi.json");
+    let openapi: serde_json::Value = serde_json::from_slice(&raw).expect("decode openapi.json");
+    let paths = &openapi["paths"];
+    let query = &paths["/api/v1/events/{request_id}/device-check/query"]["post"];
+    let write = &paths["/api/v1/events/{request_id}/device-check"]["put"];
+    assert!(query.is_object() && write.is_object());
+    assert!(query.get("requestBody").is_none());
+    for operation in [query, write] {
+        for status in ["200", "404", "409", "422", "503"] {
+            assert!(operation["responses"][status].is_object(), "{status}");
+        }
+    }
+    let body = &write["requestBody"]["content"]["application/json"]["schema"]["properties"];
+    assert!(body["bit0"].is_object() && body["bit1"].is_object());
+
+    let schemas = &openapi["components"]["schemas"];
+    let mut required: Vec<&str> = schemas["DeviceCheckQueryOut"]["required"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    required.sort_unstable();
+    assert_eq!(required, ["bit0", "bit1", "found"]);
+    assert!(schemas["DeviceCheckQueryOut"]["properties"]["last_update"].is_object());
+    let out = schemas["DeviceCheckWriteOut"]["properties"]
+        .as_object()
+        .unwrap();
+    assert_eq!(out.len(), 2);
+    assert!(out.contains_key("bit0") && out.contains_key("bit1"));
+}

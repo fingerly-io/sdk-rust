@@ -21,6 +21,16 @@ const MAX_ERROR_BODY: usize = 1 << 20;
 /// well under a megabyte.
 const MAX_RESPONSE_BODY: usize = 4 << 20;
 
+/// Retries after the first attempt to spend a DeviceCheck token.
+const SPEND_RETRIES: u32 = 2;
+
+/// The wait before a spend retry, times the retry's number, unless the API
+/// sent `Retry-After`.
+const SPEND_BACKOFF: Duration = Duration::from_millis(250);
+
+/// The longest a spend retry waits, whatever `Retry-After` asks for.
+const MAX_SPEND_WAIT: Duration = Duration::from_secs(2);
+
 /// Every request carries a deadline that covers receiving the body, refuses
 /// redirects so the key is never replayed to another host, and reports
 /// failures as [`Error::Api`] without echoing the response body.
@@ -97,6 +107,51 @@ impl Transport {
         match tokio::time::timeout(self.timeout, self.send(request)).await {
             Ok(result) => result,
             Err(_) => Err(Error::Timeout),
+        }
+    }
+
+    /// Spends a held DeviceCheck token: one POST or PUT with an optional JSON
+    /// body, each attempt under its own deadline.
+    ///
+    /// It retries only an answer that leaves the token held (`503`) or no
+    /// answer at all (a timeout or a connection failure), and every retry is
+    /// the identical request: the API accepts a retry of a held token only
+    /// when it repeats the first request. Nothing else is retried.
+    pub(crate) async fn spend_json(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<Vec<u8>>,
+    ) -> Result<serde_json::Value> {
+        let url = format!("{}{path}", self.base_url);
+        let mut attempt = 0;
+        loop {
+            let mut request = self.http.request(method.clone(), &url);
+            if let Some(body) = &body {
+                request = request
+                    .header("content-type", "application/json")
+                    .body(body.clone());
+            }
+            let result = match tokio::time::timeout(self.timeout, self.send(request)).await {
+                Ok(result) => result,
+                Err(_) => Err(Error::Timeout),
+            };
+            let retryable = match &result {
+                Err(Error::Api(api)) => api.status == 503,
+                Err(Error::Timeout | Error::Connection { .. }) => true,
+                _ => false,
+            };
+            if !retryable || attempt >= SPEND_RETRIES {
+                return result;
+            }
+            let wait = match &result {
+                Err(Error::Api(api)) => api.retry_after.map(Duration::from_secs),
+                _ => None,
+            }
+            .unwrap_or(SPEND_BACKOFF * (attempt + 1))
+            .min(MAX_SPEND_WAIT);
+            attempt += 1;
+            tokio::time::sleep(wait).await;
         }
     }
 

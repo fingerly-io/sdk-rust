@@ -24,7 +24,7 @@
 //!
 //! | Feature | Default | What it adds |
 //! | --- | --- | --- |
-//! | `client` | yes | [`Fingerly`] and event reads, over reqwest and Tokio. |
+//! | `client` | yes | [`Fingerly`], event reads and DeviceCheck bits, over reqwest and Tokio. |
 //! | `proxy` | yes | [`FingerlyProxy`], a [`tower_service::Service`]. Implies `client`. |
 //! | `rustls` | yes | TLS through rustls. |
 //! | `native-tls` | no | TLS through the platform's own stack instead. |
@@ -42,6 +42,8 @@
 mod client;
 #[cfg(feature = "client")]
 mod config;
+#[cfg(feature = "client")]
+mod device_check;
 mod errors;
 #[cfg(feature = "client")]
 mod events;
@@ -57,6 +59,11 @@ mod webhooks;
 #[cfg(feature = "client")]
 #[cfg_attr(docsrs, doc(cfg(feature = "client")))]
 pub use crate::client::{Fingerly, FingerlyBuilder};
+#[cfg(feature = "client")]
+#[cfg_attr(docsrs, doc(cfg(feature = "client")))]
+pub use crate::device_check::{
+    DeviceCheckBits, DeviceCheckClient, DeviceCheckWrite, DeviceCheckWriteResult,
+};
 #[cfg(feature = "client")]
 #[cfg_attr(docsrs, doc(cfg(feature = "client")))]
 pub use crate::events::{EventListParams, EventsClient};

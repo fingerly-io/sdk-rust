@@ -3,6 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::device_check::DeviceCheckClient;
 use crate::errors::Result;
 use crate::events::EventsClient;
 use crate::transport::Transport;
@@ -28,6 +29,7 @@ use crate::transport::Transport;
 #[derive(Clone, Debug)]
 pub struct Fingerly {
     events: EventsClient,
+    device_check: DeviceCheckClient,
 }
 
 impl Fingerly {
@@ -56,6 +58,12 @@ impl Fingerly {
     /// Event reads under this client's secret key.
     pub fn events(&self) -> &EventsClient {
         &self.events
+    }
+
+    /// The DeviceCheck bits of the device behind an iOS event, under this
+    /// client's secret key.
+    pub fn device_check(&self) -> &DeviceCheckClient {
+        &self.device_check
     }
 }
 
@@ -141,8 +149,10 @@ impl FingerlyBuilder {
             self.timeout,
             self.http_client_builder,
         )?;
+        let transport = Arc::new(transport);
         Ok(Fingerly {
-            events: EventsClient::new(Arc::new(transport)),
+            events: EventsClient::new(transport.clone()),
+            device_check: DeviceCheckClient::new(transport),
         })
     }
 }

@@ -72,7 +72,9 @@ Every call returns `fingerly::Result<T>`, whose error is one `Error` enum:
 and `retry_after`. The secret key is stripped from all of them, and the
 response body is never echoed into a message. `retry_after` is the number of
 seconds from the `Retry-After` header, also reachable as
-`error.retry_after()`; the SDK never retries a read itself.
+`error.retry_after()`; the SDK never retries a read itself. Only a
+DeviceCheck spend is retried, as [DeviceCheck bits on iOS](#devicecheck-bits-on-ios)
+describes.
 
 ```rust
 match fingerly.events().get(&request_id).await {
@@ -196,6 +198,78 @@ async fn verify(fingerly: &Fingerly, request_id: &str, tag: &str) -> Result<Verd
     Ok(Verdict::Allow)
 }
 ```
+
+## DeviceCheck bits on iOS
+
+When DeviceCheck is turned on for your project's Apple key, Fingerly holds the
+DeviceCheck token of an iOS identification for one hour. Your backend spends
+it once, with this client, to read or to set the device's two bits. Apple
+keeps the bits per device for your developer team, and they survive a
+reinstall. They mean what you decide; Fingerly never reads or keeps them.
+
+Apple treats a DeviceCheck token as single-use, so each held token pays for
+one call: a read or a write, never both. To check a device and then mark it,
+such as for a once-per-device free trial, use two identifications:
+
+1. Query on the identification that asks for the trial. If the bit says the
+   device already had one, refuse it.
+2. Otherwise record the grant in your own data, have the app identify again,
+   and write the bit with that second request ID. Until the write lands, your
+   own record of the grant is what stops a second trial.
+
+```rust
+use fingerly::{DeviceCheckWrite, Error, Fingerly};
+
+/// bit0 means "this device has had a free trial". The meaning is yours.
+async fn trial_used_on_device(fingerly: &Fingerly, request_id: &str) -> Result<bool, Error> {
+    match fingerly.device_check().query(request_id).await {
+        Ok(bits) => Ok(bits.found && bits.bit0),
+        // No token for this event: decide without the bits, not a verdict.
+        Err(error) if error.is_device_check_not_held() || error.is_device_check_spent() => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+/// Called with the request ID of the identification after the grant.
+async fn mark_trial_used(fingerly: &Fingerly, request_id: &str) -> Result<bool, Error> {
+    match fingerly
+        .device_check()
+        .write(request_id, DeviceCheckWrite::new().bit0(true))
+        .await
+    {
+        Ok(_) => Ok(true),
+        // Keep your record unmarked and write at the next identification.
+        Err(error) if error.is_device_check_not_held() || error.is_device_check_spent() => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+```
+
+`query` returns `DeviceCheckBits` (`found`, `bit0`, `bit1`, and
+`last_update` as `YYYY-MM` when Apple holds bits). `write` takes the bits to
+set and returns `DeviceCheckWriteResult` with each bit it set; a bit left out
+keeps its value, and a write that names neither bit is refused with
+`Error::Config` before anything is sent.
+
+A `503 device_check_unavailable`, a timeout or a connection failure leaves the
+token held. The client retries those twice, with the identical request,
+because the API accepts a retry of a held token only when it repeats the first
+request: another operation or other bits answer `409 device_check_spent`. If
+it still fails, retry the same call yourself within the hour. Nothing else is
+retried. Each answer has a predicate on `Error`:
+
+| Status | Code | Predicate |
+| --- | --- | --- |
+| 404 | `device_check_not_held` | `is_device_check_not_held()` |
+| 409 | `device_check_spent` | `is_device_check_spent()` |
+| 409 | `device_check_busy` | `is_device_check_busy()` |
+| 409 | `credential_unavailable` | `is_credential_unavailable()` |
+| 422 | `bits_required` | `is_bits_required()` |
+| 422 | `apple_rejected` | `is_apple_rejected()`, with Apple's status in `apple_status()` |
+| 503 | `device_check_unavailable` | `is_device_check_unavailable()` |
+
+Never rely on the bits as the only fraud check, and give customers a way to
+have them reset, which is a write of `false` at their next identification.
 
 ## Webhooks
 
@@ -409,7 +483,7 @@ let proxy = FingerlyProxy::builder()
 
 | Feature | Default | What it adds |
 | --- | --- | --- |
-| `client` | yes | `Fingerly` and event reads, over reqwest and Tokio. |
+| `client` | yes | `Fingerly`, event reads and DeviceCheck bits, over reqwest and Tokio. |
 | `proxy` | yes | `FingerlyProxy`, a `tower::Service`. Implies `client`. |
 | `rustls` | yes | TLS through rustls. |
 | `native-tls` | no | TLS through the platform's own stack instead. |

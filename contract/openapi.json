@@ -2179,7 +2179,7 @@
     },
     "/api/v1/events/{request_id}/device-check": {
       "put": {
-        "description": "Spends the DeviceCheck token held for this iOS event, once, to set bit0, bit1 or both with Apple, using your project's own Apple key. A bit left out keeps its value. The bits mean what you decide; Fingerly never reads them. Tokens are held for one hour, only for events whose App Attest evidence covered them, and only when DeviceCheck is switched on for the project's Apple credential.",
+        "description": "Spends the DeviceCheck token held for this iOS event, once, to set bit0, bit1 or both with Apple, using your project's own Apple key. A bit left out keeps its value. The bits mean what you decide; Fingerly never reads them. Apple answers a write with no previous value, and a token spent on a write cannot also read. Tokens are held for one hour, only for events whose App Attest evidence covered them, and only when DeviceCheck is switched on for the project's Apple credential. After a `503`, retry with the same bits: a token kept for a retry accepts only the request it was first used for.",
         "operationId": "setDeviceDevicecheckBits",
         "parameters": [
           {
@@ -2266,7 +2266,7 @@
                 }
               }
             },
-            "description": "`device_check_spent`, `device_check_busy` or `credential_unavailable`"
+            "description": "`device_check_spent`: already used, or a retry that is not the first request; `device_check_busy` or `credential_unavailable`"
           },
           "422": {
             "content": {
@@ -2314,7 +2314,7 @@
     },
     "/api/v1/events/{request_id}/device-check/query": {
       "post": {
-        "description": "Spends the DeviceCheck token held for this iOS event, once, to read the device's two bits from Apple. A token spent on a read cannot also write; to mark a device, write instead.",
+        "description": "Spends the DeviceCheck token held for this iOS event, once, to read the device's two bits from Apple. Apple asks for each token to be used once, so a token spent on a read cannot also write: to read and then mark a device, read on one identification and write on the next. After a `503`, retry the read: a token kept for a retry accepts only the request it was first used for.",
         "operationId": "readDeviceDevicecheckBits",
         "parameters": [
           {
@@ -2375,7 +2375,7 @@
                 }
               }
             },
-            "description": "`device_check_spent`, `device_check_busy` or `credential_unavailable`"
+            "description": "`device_check_spent`: already used, or a retry that is not the first request; `device_check_busy` or `credential_unavailable`"
           },
           "422": {
             "content": {
@@ -2385,7 +2385,7 @@
                 }
               }
             },
-            "description": "The request could not be validated."
+            "description": "`apple_rejected`: Apple rejected the token; `apple_status` says how"
           },
           "503": {
             "content": {
