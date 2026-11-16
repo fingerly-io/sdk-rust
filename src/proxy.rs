@@ -1,5 +1,6 @@
 //! The same-origin proxy, as a [`tower_service::Service`] over `http` types.
 
+use std::collections::BTreeSet;
 use std::convert::Infallible;
 use std::fmt;
 use std::future::Future;
@@ -51,6 +52,77 @@ const RELAYED_HEADERS: [&str; 5] = [
     "ratelimit-remaining",
     "retry-after",
 ];
+
+/// Browser fetch-metadata and client-hint headers forwarded verbatim when
+/// present on the incoming request.
+const CLIENT_METADATA_HEADERS: [&str; 6] = [
+    "sec-fetch-site",
+    "sec-fetch-mode",
+    "sec-fetch-dest",
+    "sec-ch-ua",
+    "sec-ch-ua-mobile",
+    "sec-ch-ua-platform",
+];
+
+/// Exact lowercase native and multi-platform bridge identifiers accepted on
+/// incoming `x-fingerly-sdk-platform` before stripping `x-fingerly-*`.
+const VALID_SDK_PLATFORMS: [&str; 12] = [
+    "ios",
+    "android",
+    "react-native",
+    "react-native-ios",
+    "react-native-android",
+    "flutter",
+    "flutter-ios",
+    "flutter-android",
+    "lynx-ios",
+    "lynx-android",
+    "capacitor",
+    "kotlin-multiplatform",
+];
+
+const CORS_ALLOW_HEADERS: &str =
+    "content-type, x-api-key, idempotency-key, x-fingerly-sdk-platform";
+const CORS_EXPOSE_HEADERS: &str = "x-request-id, ratelimit-limit, ratelimit-remaining, retry-after";
+const MISSING_ORIGIN_BODY: &str =
+    r#"{"error":{"code":"missing_origin","message":"Origin header is required","status":400}}"#;
+
+/// Returns the validated native or bridge platform identifier when incoming
+/// `x-fingerly-sdk-platform` has a single exact lowercase match.
+fn valid_sdk_platform(headers: &http::HeaderMap) -> Option<&'static str> {
+    let mut values = headers.get_all("x-fingerly-sdk-platform").iter();
+    let first = values.next()?.to_str().ok()?;
+    if values.next().is_some() {
+        return None;
+    }
+    VALID_SDK_PLATFORMS
+        .iter()
+        .copied()
+        .find(|&candidate| candidate == first)
+}
+
+/// Returns the single non-empty incoming `Origin` header value when present.
+fn non_empty_origin(headers: &http::HeaderMap) -> Option<HeaderValue> {
+    let mut values = headers.get_all(http::header::ORIGIN).iter();
+    let first = values.next()?;
+    if values.next().is_some() {
+        return None;
+    }
+    let raw = first.to_str().ok()?;
+    if raw.trim().is_empty() {
+        return None;
+    }
+    Some(first.clone())
+}
+
+/// Returns a cloned header value when present and non-whitespace.
+fn non_empty_header(headers: &http::HeaderMap, name: &str) -> Option<HeaderValue> {
+    let value = headers.get(name)?;
+    if value.as_bytes().iter().all(u8::is_ascii_whitespace) {
+        return None;
+    }
+    Some(value.clone())
+}
 
 /// Resolves the visitor's address from the parts of the incoming request.
 ///
@@ -104,16 +176,17 @@ impl fmt::Display for ProxyError {
 
 impl std::error::Error for ProxyError {}
 
-/// Same-origin handler for the browser SDK.
+/// Same-origin handler for client SDK submissions.
 ///
-/// It exists so the browser SDK can post to a path on your own domain instead
-/// of Fingerly, because content blockers refuse third-party requests and a
-/// refused identification is a visitor never identified. The SDK posts both of
-/// its calls to that one path, and this forwards each to Fingerly's one ingest
-/// URL, never anywhere else and never to event reads: reading events needs a
-/// secret key and must stay unreachable from a browser. It sends only vetted
-/// visitor metadata, never passes on customer cookies or authorization
-/// headers, and relays nothing back that names Fingerly.
+/// It exists so browser and native SDKs can post to a path on your own domain
+/// instead of Fingerly, because content blockers refuse third-party requests
+/// and a refused identification is a visitor never identified. Client SDKs post
+/// raw identification envelopes to that one path, and this forwards each
+/// verbatim to Fingerly's single ingest URL, never anywhere else and never to
+/// event reads: reading events needs a secret key and must stay unreachable
+/// from a client. It sends only vetted visitor metadata, never passes on
+/// customer cookies or authorization headers, and relays nothing back that
+/// names Fingerly.
 ///
 /// It implements [`tower_service::Service`] over [`http::Request`], which axum
 /// mounts directly and hyper serves through `hyper_util`. Anything else calls
@@ -163,6 +236,8 @@ struct ProxyInner {
     max_body_bytes: usize,
     /// Deadline for reading the body and forwarding it.
     timeout: Duration,
+    /// Allowed cross-origin browser origins when CORS is explicitly configured.
+    allowed_origins: BTreeSet<String>,
     /// Customer callback resolving the visitor IP from trusted infrastructure.
     client_ip: Arc<ClientIpFn>,
     /// HTTP implementation for the upstream call.
@@ -191,7 +266,7 @@ impl FingerlyProxy {
         FingerlyProxyBuilder::default()
     }
 
-    /// Handles one browser request.
+    /// Handles one browser or native SDK request.
     ///
     /// Every refusal is produced here, before anything reaches Fingerly. Use
     /// it directly on a framework that does not speak [`tower_service`].
@@ -208,12 +283,32 @@ impl FingerlyProxy {
             return refuse(StatusCode::NOT_FOUND);
         }
 
+        let origin = non_empty_origin(&parts.headers);
+        let cors = inner.matched_cors_origin(origin.as_ref());
+
+        if parts.method == http::Method::OPTIONS && cors.is_some() {
+            let mut response = Response::new(Full::new(Bytes::new()));
+            *response.status_mut() = StatusCode::NO_CONTENT;
+            response.headers_mut().insert(
+                http::header::ALLOW,
+                HeaderValue::from_static("POST, OPTIONS"),
+            );
+            response.headers_mut().insert(
+                http::header::CACHE_CONTROL,
+                HeaderValue::from_static("no-store"),
+            );
+            return with_cors(response, cors.as_ref());
+        }
+
         if parts.method != http::Method::POST {
             let mut response = refuse(StatusCode::METHOD_NOT_ALLOWED);
-            response
-                .headers_mut()
-                .insert(http::header::ALLOW, HeaderValue::from_static("POST"));
-            return response;
+            let allow = if inner.allowed_origins.is_empty() {
+                HeaderValue::from_static("POST")
+            } else {
+                HeaderValue::from_static("POST, OPTIONS")
+            };
+            response.headers_mut().insert(http::header::ALLOW, allow);
+            return with_cors(response, cors.as_ref());
         }
 
         let presented = parts
@@ -221,8 +316,19 @@ impl FingerlyProxy {
             .get("x-api-key")
             .and_then(|value| value.to_str().ok());
         let Some(api_key) = inner.upstream_key_for(presented) else {
-            return refuse(StatusCode::UNAUTHORIZED);
+            return with_cors(refuse(StatusCode::UNAUTHORIZED), cors.as_ref());
         };
+
+        // Sanitize-and-restore Steps 1-4: capture validated `x-fingerly-sdk-platform`
+        // before stripping incoming `x-fingerly-*` headers, and reject with 400
+        // `missing_origin` iff both `Origin` and validated platform are empty.
+        let sdk_platform = valid_sdk_platform(&parts.headers);
+        if origin.is_none() && sdk_platform.is_none() {
+            return with_cors(
+                refuse_json(StatusCode::BAD_REQUEST, MISSING_ORIGIN_BODY),
+                cors.as_ref(),
+            );
+        }
 
         // A `client_ip` that returns anything but one address is a bug in the
         // integration, not something the visitor did. Nothing goes upstream,
@@ -235,18 +341,29 @@ impl FingerlyProxy {
                     message: NO_CLIENT_IP.to_owned(),
                 });
             }
-            return refuse_with(StatusCode::INTERNAL_SERVER_ERROR, NO_CLIENT_IP_ANSWER);
+            return with_cors(
+                refuse_with(StatusCode::INTERNAL_SERVER_ERROR, NO_CLIENT_IP_ANSWER),
+                cors.as_ref(),
+            );
         };
 
         // Refuse on the declared size first; the limited read enforces the
         // real one.
         if declared_length(&parts).is_some_and(|length| length > inner.max_body_bytes) {
-            return refuse(StatusCode::PAYLOAD_TOO_LARGE);
+            return with_cors(refuse(StatusCode::PAYLOAD_TOO_LARGE), cors.as_ref());
         }
 
-        let headers = match inner.upstream_headers(&parts, &api_key, client_ip) {
+        let headers = match inner.upstream_headers(
+            &parts,
+            &api_key,
+            client_ip,
+            origin.as_ref(),
+            sdk_platform,
+        ) {
             Ok(headers) => headers,
-            Err(_) => return refuse(StatusCode::INTERNAL_SERVER_ERROR),
+            Err(_) => {
+                return with_cors(refuse(StatusCode::INTERNAL_SERVER_ERROR), cors.as_ref());
+            }
         };
 
         // One deadline covers reading the browser's body and the whole
@@ -260,11 +377,11 @@ impl FingerlyProxy {
             // limit instead of being held in memory first. Anything else is a
             // browser that went away mid-body.
             Ok(Err(error)) if error.downcast_ref::<LengthLimitError>().is_some() => {
-                return refuse(StatusCode::PAYLOAD_TOO_LARGE)
+                return with_cors(refuse(StatusCode::PAYLOAD_TOO_LARGE), cors.as_ref());
             }
-            Ok(Err(_)) => return refuse(StatusCode::BAD_REQUEST),
+            Ok(Err(_)) => return with_cors(refuse(StatusCode::BAD_REQUEST), cors.as_ref()),
             // The visitor, not Fingerly, was too slow.
-            Err(_) => return refuse(StatusCode::REQUEST_TIMEOUT),
+            Err(_) => return with_cors(refuse(StatusCode::REQUEST_TIMEOUT), cors.as_ref()),
         };
 
         let forward = async {
@@ -279,7 +396,7 @@ impl FingerlyProxy {
             relay(response).await
         };
         let failure = match tokio::time::timeout_at(deadline, forward).await {
-            Ok(Ok(response)) => return response,
+            Ok(Ok(response)) => return with_cors(response, cors.as_ref()),
             Ok(Err((kind, message))) => ProxyError {
                 status: StatusCode::BAD_GATEWAY,
                 kind,
@@ -292,7 +409,7 @@ impl FingerlyProxy {
             },
         };
         inner.report(&failure);
-        refuse(failure.status)
+        with_cors(refuse(failure.status), cors.as_ref())
     }
 }
 
@@ -333,6 +450,18 @@ impl ProxyInner {
         self.path.as_deref().is_none_or(|expected| path == expected)
     }
 
+    /// Matches the incoming `Origin` against configured cross-origin CORS
+    /// origins.
+    fn matched_cors_origin(&self, origin: Option<&HeaderValue>) -> Option<HeaderValue> {
+        if self.allowed_origins.is_empty() {
+            return None;
+        }
+        let raw = origin?.to_str().ok()?.trim();
+        self.allowed_origins
+            .get(raw)
+            .and_then(|matched| HeaderValue::from_str(matched).ok())
+    }
+
     /// Decides which key to present upstream.
     ///
     /// With a proxy key the browser must supply a public key for the same
@@ -347,15 +476,15 @@ impl ProxyInner {
         (browser == self.scope).then(|| presented.to_owned())
     }
 
-    /// Builds the upstream headers.
-    ///
-    /// Nothing is copied wholesale: only the body's content type, the visitor
-    /// metadata Fingerly needs, and an idempotency key when the SDK sent one.
+    /// Builds the upstream headers from scratch so incoming `x-fingerly-*`,
+    /// `cookie`, and `authorization` headers never pass through.
     fn upstream_headers(
         &self,
         parts: &Parts,
         api_key: &str,
         client_ip: IpAddr,
+        origin: Option<&HeaderValue>,
+        sdk_platform: Option<&'static str>,
     ) -> Result<http::HeaderMap> {
         let client_ip = HeaderValue::from_str(&client_ip.to_string())
             .map_err(|_| Error::config("client_ip must resolve to a plain address"))?;
@@ -363,10 +492,7 @@ impl ProxyInner {
         let mut headers = http::HeaderMap::new();
         headers.insert(
             http::header::CONTENT_TYPE,
-            parts
-                .headers
-                .get(http::header::CONTENT_TYPE)
-                .cloned()
+            non_empty_header(&parts.headers, "content-type")
                 .unwrap_or_else(|| HeaderValue::from_static("application/json")),
         );
         headers.insert(
@@ -375,14 +501,33 @@ impl ProxyInner {
                 .map_err(|_| Error::config("the API key is not a valid header value"))?,
         );
         headers.insert(HeaderName::from_static("x-fingerly-client-ip"), client_ip);
-        headers.insert(
-            HeaderName::from_static("x-fingerly-origin"),
-            parts
-                .headers
-                .get(http::header::ORIGIN)
-                .cloned()
-                .unwrap_or_else(|| HeaderValue::from_static("")),
-        );
+        if let Some(origin) = origin {
+            headers.insert(HeaderName::from_static("x-fingerly-origin"), origin.clone());
+        }
+        if let Some(platform) = sdk_platform {
+            headers.insert(
+                HeaderName::from_static("x-fingerly-sdk-platform"),
+                HeaderValue::from_static(platform),
+            );
+        }
+        let host = parts
+            .headers
+            .get(http::header::HOST)
+            .and_then(|value| value.to_str().ok())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .or_else(|| {
+                parts
+                    .uri
+                    .authority()
+                    .map(|auth| auth.as_str().trim())
+                    .filter(|value| !value.is_empty())
+            });
+        if let Some(host) = host {
+            if let Ok(value) = HeaderValue::from_str(host) {
+                headers.insert(HeaderName::from_static("x-fingerly-host"), value);
+            }
+        }
         headers.insert(
             HeaderName::from_static("x-fingerly-user-agent"),
             parts
@@ -406,11 +551,13 @@ impl ProxyInner {
                     .map_err(|_| Error::config("the proxy key is not a valid header value"))?,
             );
         }
-        if let Some(idempotency) = parts.headers.get("idempotency-key") {
-            headers.insert(
-                HeaderName::from_static("idempotency-key"),
-                idempotency.clone(),
-            );
+        if let Some(idempotency) = non_empty_header(&parts.headers, "idempotency-key") {
+            headers.insert(HeaderName::from_static("idempotency-key"), idempotency);
+        }
+        for name in CLIENT_METADATA_HEADERS {
+            if let Some(value) = non_empty_header(&parts.headers, name) {
+                headers.insert(HeaderName::from_static(name), value);
+            }
         }
         Ok(headers)
     }
@@ -447,6 +594,7 @@ pub struct FingerlyProxyBuilder {
     path: Option<String>,
     max_body_bytes: Option<usize>,
     timeout: Option<Duration>,
+    allowed_origins: Vec<String>,
     client_ip: Option<Arc<ClientIpFn>>,
     http_client_builder: Option<reqwest::ClientBuilder>,
     on_error: Option<Arc<ProxyErrorHook>>,
@@ -536,6 +684,18 @@ impl FingerlyProxyBuilder {
         self
     }
 
+    /// Origins permitted to make cross-origin browser requests to this proxy.
+    ///
+    /// Leave empty when the proxy is mounted on the same origin as the page.
+    pub fn allowed_origins<I, S>(mut self, origins: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.allowed_origins = origins.into_iter().map(Into::into).collect();
+        self
+    }
+
     /// Receives every failure the proxy answers for with a 5xx of its own:
     /// `504` when the deadline passed, `502` for any other upstream failure,
     /// `500` for a `client_ip` that returned no valid address (once). Without
@@ -596,6 +756,7 @@ impl FingerlyProxyBuilder {
             None => DEFAULT_MAX_BODY_BYTES,
         };
         let timeout = positive_duration(self.timeout.unwrap_or(DEFAULT_TIMEOUT), "timeout")?;
+        let allowed_origins = parse_allowed_origins(&self.allowed_origins)?;
 
         let http = crate::pool::client_from(self.http_client_builder)
             .map_err(|error| Error::config(format!("could not build the HTTP client: {error}")))?;
@@ -609,6 +770,7 @@ impl FingerlyProxyBuilder {
                 path,
                 max_body_bytes,
                 timeout,
+                allowed_origins,
                 client_ip,
                 http,
                 on_error: self.on_error,
@@ -616,6 +778,24 @@ impl FingerlyProxyBuilder {
             }),
         })
     }
+}
+
+/// Validates caller-supplied cross-origin CORS origins.
+fn parse_allowed_origins(origins: &[String]) -> Result<BTreeSet<String>> {
+    let mut parsed = BTreeSet::new();
+    for raw in origins {
+        let trimmed = raw.trim();
+        let normalized = normalize_origin(trimmed)?;
+        let url = url::Url::parse(trimmed)
+            .map_err(|_| Error::config("allowed_origins entries must be bare HTTP(S) origins"))?;
+        if url.path() != "/" {
+            return Err(Error::config(
+                "allowed_origins entries must be bare HTTP(S) origins",
+            ));
+        }
+        parsed.insert(normalized);
+    }
+    Ok(parsed)
 }
 
 /// Reads the declared body size, when the browser sent a usable one.
@@ -651,6 +831,47 @@ fn refuse_with(status: StatusCode, reason: &'static str) -> Response<Full<Bytes>
         http::header::CACHE_CONTROL,
         HeaderValue::from_static("no-store"),
     );
+    response
+}
+
+/// Builds `status` with a static JSON error body, uncacheable.
+fn refuse_json(status: StatusCode, body: &'static str) -> Response<Full<Bytes>> {
+    let mut response = Response::new(Full::new(Bytes::from_static(body.as_bytes())));
+    *response.status_mut() = status;
+    response.headers_mut().insert(
+        http::header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    response.headers_mut().insert(
+        http::header::CACHE_CONTROL,
+        HeaderValue::from_static("no-store"),
+    );
+    response
+}
+
+/// Appends cross-origin CORS response headers when the incoming `Origin`
+/// matched [`FingerlyProxyBuilder::allowed_origins`].
+fn with_cors(
+    mut response: Response<Full<Bytes>>,
+    cors: Option<&HeaderValue>,
+) -> Response<Full<Bytes>> {
+    if let Some(origin) = cors {
+        let headers = response.headers_mut();
+        headers.insert(http::header::ACCESS_CONTROL_ALLOW_ORIGIN, origin.clone());
+        headers.insert(http::header::VARY, HeaderValue::from_static("Origin"));
+        headers.insert(
+            http::header::ACCESS_CONTROL_ALLOW_METHODS,
+            HeaderValue::from_static("POST, OPTIONS"),
+        );
+        headers.insert(
+            http::header::ACCESS_CONTROL_ALLOW_HEADERS,
+            HeaderValue::from_static(CORS_ALLOW_HEADERS),
+        );
+        headers.insert(
+            http::header::ACCESS_CONTROL_EXPOSE_HEADERS,
+            HeaderValue::from_static(CORS_EXPOSE_HEADERS),
+        );
+    }
     response
 }
 

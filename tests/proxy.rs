@@ -102,6 +102,18 @@ fn refuses_options_it_could_not_honour() {
     ] {
         builds.push(FingerlyProxy::builder().proxy_key(PROXY_KEY).path(path));
     }
+    for origin in [
+        "",
+        "*",
+        "https://shop.example.com/sub",
+        "https://user:pass@shop.example.com",
+    ] {
+        builds.push(
+            FingerlyProxy::builder()
+                .proxy_key(PROXY_KEY)
+                .allowed_origins([origin]),
+        );
+    }
     for build in builds {
         let result = build.client_ip(|_| CLIENT_IP.to_owned()).build();
         assert!(matches!(result, Err(Error::Config { .. })));
@@ -143,22 +155,20 @@ async fn forwards_to_the_one_ingest_url_with_only_vetted_metadata() {
     assert_eq!(forwarded.header("authorization"), "");
 }
 
-/// The browser SDK posts its deferred report to the same path, and Fingerly
-/// tells the two apart by the body, so the proxy forwards it unchanged.
+/// Raw body bytes are forwarded verbatim without JSON decoding or float
+/// re-formatting, preserving `v: 3` hardware-signed payloads (`142.50`).
 #[tokio::test]
-async fn forwards_a_deferred_report_to_the_same_url() {
-    let server = TestServer::always(Canned::json(202, "{}")).await;
+async fn preserves_raw_v3_body_bytes_verbatim() {
+    let server = TestServer::always(identified()).await;
+    let raw = br#"{"v":3,"signals":{"latency":142.50,"sci":1e-05}}"#;
     let mut request = identify(PATH);
-    *request.body_mut() = Full::new(Bytes::from_static(b"{\"token\":\"t_1\"}"));
+    *request.body_mut() = Full::new(Bytes::from_static(raw));
 
     let response = proxy(&server).handle(request).await;
 
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(server.first().path, INGEST);
-    assert_eq!(
-        server.first().body,
-        Bytes::from_static(b"{\"token\":\"t_1\"}")
-    );
+    assert_eq!(server.first().body, Bytes::from_static(raw));
 }
 
 #[tokio::test]
@@ -264,12 +274,15 @@ async fn refuses_every_path_but_the_configured_one() {
     let server = TestServer::always(identified()).await;
     for path in [
         "/k7x2qm4a/admin",
+        "/k7x2qm4a/supplement",
+        "/k7x2qm4a/events/req_1/supplement",
         "/k7x2qm4a/api/v1/identify",
         "/k7x2qm4ab",
         "/K7X2QM4A",
         "/other",
         "/api/v1/ingest",
         "/api/v1/events",
+        "/api/v1/events/req_1/supplement",
         "/",
     ] {
         let response = proxy(&server).handle(identify(path)).await;
@@ -278,6 +291,7 @@ async fn refuses_every_path_but_the_configured_one() {
             StatusCode::NOT_FOUND,
             "{path} was proxied"
         );
+        assert_eq!(response.headers()["cache-control"], "no-store");
     }
 
     let mut wrong_method = identify("/other");
@@ -372,6 +386,7 @@ async fn refuses_a_body_that_turns_out_too_large() {
         .method("POST")
         .uri(PATH)
         .header("x-api-key", PUBLIC_KEY)
+        .header("origin", "https://shop.example.com")
         .body(Full::new(Bytes::from(vec![b'x'; 64])))
         .unwrap();
 
@@ -649,6 +664,7 @@ async fn post_to(address: std::net::SocketAddr, path: &str) -> (u16, Vec<String>
     let response = reqwest::Client::new()
         .post(format!("http://{address}{path}"))
         .header("x-api-key", PUBLIC_KEY)
+        .header("origin", "https://shop.example.com")
         .header("content-type", "application/json")
         .body(r#"{"signals":{}}"#)
         .send()
@@ -934,4 +950,314 @@ async fn a_burst_against_a_hostname_reuses_connections() {
         "{} requests opened {opened} connections",
         IN_FLIGHT * EACH
     );
+}
+
+#[tokio::test]
+async fn rejects_originless_browser_post_without_synthesizing_origin() {
+    let server = TestServer::always(identified()).await;
+    let proxy = proxy(&server);
+
+    // Absent Origin, whitespace-only Origin, and duplicate Origin headers must
+    // all fail closed with 400 missing_origin without touching upstream.
+    let mut missing = identify(PATH);
+    missing.headers_mut().remove("origin");
+    missing
+        .headers_mut()
+        .insert("host", "shop.example.com".parse().unwrap());
+    missing.headers_mut().insert(
+        "referer",
+        "https://shop.example.com/checkout".parse().unwrap(),
+    );
+
+    let mut blank = missing.clone();
+    blank.headers_mut().insert("origin", "   ".parse().unwrap());
+
+    let mut duplicated = missing.clone();
+    duplicated
+        .headers_mut()
+        .append("origin", "https://shop.example.com".parse().unwrap());
+    duplicated
+        .headers_mut()
+        .append("origin", "https://evil.example.com".parse().unwrap());
+
+    for request in [missing, blank, duplicated] {
+        let response = proxy.handle(request).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.headers()["content-type"], "application/json");
+        assert_eq!(response.headers()["cache-control"], "no-store");
+        let text = body_of(response).await;
+        assert!(!text.to_ascii_lowercase().contains("fingerly"), "{text}");
+        let parsed: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(parsed["error"]["code"], "missing_origin");
+        assert_eq!(parsed["error"]["status"], 400);
+    }
+    assert_eq!(server.request_count(), 0);
+}
+
+#[tokio::test]
+async fn strips_spoofed_fingerly_headers_and_discards_invalid_sdk_platform() {
+    let server = TestServer::always(identified()).await;
+    let proxy = proxy(&server);
+
+    for invalid in [
+        "",
+        "web",
+        "iOS",
+        "ANDROID",
+        " ios",
+        "ios ",
+        "ios, android",
+        "unknown",
+    ] {
+        let mut request = identify(PATH);
+        request.headers_mut().remove("origin");
+        request
+            .headers_mut()
+            .insert("x-fingerly-sdk-platform", invalid.parse().unwrap());
+        request.headers_mut().insert(
+            "x-fingerly-origin",
+            "https://spoofed.example.com".parse().unwrap(),
+        );
+        request
+            .headers_mut()
+            .insert("x-fingerly-client-ip", "198.51.100.99".parse().unwrap());
+
+        let response = proxy.handle(request).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::BAD_REQUEST,
+            "{invalid:?} bypassed missing_origin"
+        );
+    }
+
+    // Duplicate header lines must never smuggle past get() returning the first.
+    let mut duplicate_platform = identify(PATH);
+    duplicate_platform.headers_mut().remove("origin");
+    duplicate_platform
+        .headers_mut()
+        .append("x-fingerly-sdk-platform", "ios".parse().unwrap());
+    duplicate_platform
+        .headers_mut()
+        .append("x-fingerly-sdk-platform", "evil".parse().unwrap());
+    assert_eq!(
+        proxy.handle(duplicate_platform).await.status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(server.request_count(), 0);
+
+    // On a valid browser request (Origin present), spoofed x-fingerly-* headers
+    // and invalid x-fingerly-sdk-platform values are completely stripped.
+    let mut browser = identify(PATH);
+    browser
+        .headers_mut()
+        .insert("host", "shop.example.com".parse().unwrap());
+    browser
+        .headers_mut()
+        .insert("x-fingerly-sdk-platform", "web".parse().unwrap());
+    browser.headers_mut().insert(
+        "x-fingerly-proxy-key",
+        "fly_px_production_spoofed".parse().unwrap(),
+    );
+    browser
+        .headers_mut()
+        .insert("x-fingerly-key", "spoofed".parse().unwrap());
+    browser
+        .headers_mut()
+        .insert("x-fingerly-client-ip", "198.51.100.99".parse().unwrap());
+    browser
+        .headers_mut()
+        .insert("x-fingerly-forwarded-for", "198.51.100.99".parse().unwrap());
+    browser.headers_mut().insert(
+        "x-fingerly-origin",
+        "https://spoofed.example.com".parse().unwrap(),
+    );
+    browser
+        .headers_mut()
+        .insert("x-fingerly-host", "spoofed.example.com".parse().unwrap());
+    browser
+        .headers_mut()
+        .insert("x-fingerly-edge-tls-version", "TLSv1.3".parse().unwrap());
+    browser
+        .headers_mut()
+        .insert("x-fingerly-edge-tls-cipher", "spoofed".parse().unwrap());
+    browser
+        .headers_mut()
+        .insert("x-fingerly-edge-http-proto", "HTTP/3".parse().unwrap());
+
+    let response = proxy.handle(browser).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let forwarded = server.first();
+    assert_eq!(forwarded.header("x-fingerly-proxy-key"), PROXY_KEY);
+    assert_eq!(forwarded.header("x-fingerly-client-ip"), CLIENT_IP);
+    assert_eq!(
+        forwarded.header("x-fingerly-origin"),
+        "https://shop.example.com"
+    );
+    assert_eq!(forwarded.header("x-fingerly-host"), "shop.example.com");
+    assert!(!forwarded.headers.contains_key("x-fingerly-sdk-platform"));
+    assert!(!forwarded.headers.contains_key("x-fingerly-key"));
+    assert!(!forwarded.headers.contains_key("x-fingerly-forwarded-for"));
+    assert!(!forwarded
+        .headers
+        .contains_key("x-fingerly-edge-tls-version"));
+    assert!(!forwarded.headers.contains_key("x-fingerly-edge-tls-cipher"));
+    assert!(!forwarded.headers.contains_key("x-fingerly-edge-http-proto"));
+}
+
+#[tokio::test]
+async fn forwards_valid_native_sdk_platforms_without_origin() {
+    let platforms = [
+        "ios",
+        "android",
+        "react-native",
+        "react-native-ios",
+        "react-native-android",
+        "flutter",
+        "flutter-ios",
+        "flutter-android",
+        "lynx-ios",
+        "lynx-android",
+        "capacitor",
+        "kotlin-multiplatform",
+    ];
+    let server = TestServer::always(identified()).await;
+    let proxy = proxy(&server);
+
+    for platform in platforms {
+        let mut request = identify(PATH);
+        request.headers_mut().remove("origin");
+        request
+            .headers_mut()
+            .insert("host", "app-proxy.example.com".parse().unwrap());
+        request
+            .headers_mut()
+            .insert("X-Fingerly-SDK-Platform", platform.parse().unwrap());
+
+        let response = proxy.handle(request).await;
+        assert_eq!(response.status(), StatusCode::OK, "{platform}");
+    }
+
+    let seen = server.requests();
+    assert_eq!(seen.len(), platforms.len());
+    for (recorded, expected) in seen.iter().zip(platforms) {
+        assert_eq!(recorded.header("x-fingerly-sdk-platform"), expected);
+        assert!(
+            !recorded.headers.contains_key("x-fingerly-origin"),
+            "{expected} synthesized x-fingerly-origin"
+        );
+        assert_eq!(recorded.header("x-fingerly-host"), "app-proxy.example.com");
+    }
+}
+
+#[tokio::test]
+async fn forwards_browser_fetch_metadata_and_client_hints_verbatim() {
+    let server = TestServer::always(identified()).await;
+    let mut request = identify(PATH);
+    request
+        .headers_mut()
+        .insert("host", "shop.example.com".parse().unwrap());
+    request
+        .headers_mut()
+        .insert("idempotency-key", "idem-v3-1".parse().unwrap());
+    request
+        .headers_mut()
+        .insert("sec-fetch-site", "same-origin".parse().unwrap());
+    request
+        .headers_mut()
+        .insert("sec-fetch-mode", "cors".parse().unwrap());
+    request
+        .headers_mut()
+        .insert("sec-fetch-dest", "empty".parse().unwrap());
+    request.headers_mut().insert(
+        "sec-ch-ua",
+        r#""Chromium";v="128", "Not;A=Brand";v="24""#.parse().unwrap(),
+    );
+    request
+        .headers_mut()
+        .insert("sec-ch-ua-mobile", "?0".parse().unwrap());
+    request
+        .headers_mut()
+        .insert("sec-ch-ua-platform", r#""macOS""#.parse().unwrap());
+    request
+        .headers_mut()
+        .insert("x-custom-untrusted", "drop-me".parse().unwrap());
+
+    let response = proxy(&server).handle(request).await;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let forwarded = server.first();
+    assert_eq!(forwarded.header("idempotency-key"), "idem-v3-1");
+    assert_eq!(forwarded.header("x-fingerly-host"), "shop.example.com");
+    assert_eq!(forwarded.header("sec-fetch-site"), "same-origin");
+    assert_eq!(forwarded.header("sec-fetch-mode"), "cors");
+    assert_eq!(forwarded.header("sec-fetch-dest"), "empty");
+    assert_eq!(
+        forwarded.header("sec-ch-ua"),
+        r#""Chromium";v="128", "Not;A=Brand";v="24""#
+    );
+    assert_eq!(forwarded.header("sec-ch-ua-mobile"), "?0");
+    assert_eq!(forwarded.header("sec-ch-ua-platform"), r#""macOS""#);
+    assert!(!forwarded.headers.contains_key("x-custom-untrusted"));
+}
+
+#[tokio::test]
+async fn answers_cors_preflight_and_exposes_allowlisted_headers_for_allowed_origins() {
+    let server = TestServer::always(identified().header("retry-after", "2")).await;
+    let proxy = FingerlyProxy::builder()
+        .proxy_key(PROXY_KEY)
+        .path(PATH)
+        .upstream(&server.base_url)
+        .allowed_origins(["https://app.example.com/"])
+        .client_ip(|_| CLIENT_IP.to_owned())
+        .build()
+        .unwrap();
+
+    let preflight = Request::builder()
+        .method("OPTIONS")
+        .uri(PATH)
+        .header("origin", "https://app.example.com")
+        .body(Full::new(Bytes::new()))
+        .unwrap();
+    let response = proxy.handle(preflight).await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(response.headers()["allow"], "POST, OPTIONS");
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    assert_eq!(
+        response.headers()["access-control-allow-origin"],
+        "https://app.example.com"
+    );
+    assert_eq!(response.headers()["vary"], "Origin");
+    assert_eq!(
+        response.headers()["access-control-allow-headers"],
+        "content-type, x-api-key, idempotency-key, x-fingerly-sdk-platform"
+    );
+    assert_eq!(
+        response.headers()["access-control-expose-headers"],
+        "x-request-id, ratelimit-limit, ratelimit-remaining, retry-after"
+    );
+
+    let disallowed_preflight = Request::builder()
+        .method("OPTIONS")
+        .uri(PATH)
+        .header("origin", "https://other.example.com")
+        .body(Full::new(Bytes::new()))
+        .unwrap();
+    let refused = proxy.handle(disallowed_preflight).await;
+    assert_eq!(refused.status(), StatusCode::METHOD_NOT_ALLOWED);
+    assert_eq!(refused.headers()["allow"], "POST, OPTIONS");
+    assert!(!refused
+        .headers()
+        .contains_key("access-control-allow-origin"));
+
+    let mut post = identify(PATH);
+    post.headers_mut()
+        .insert("origin", "https://app.example.com".parse().unwrap());
+    let relayed = proxy.handle(post).await;
+    assert_eq!(relayed.status(), StatusCode::OK);
+    assert_eq!(relayed.headers()["retry-after"], "2");
+    assert_eq!(
+        relayed.headers()["access-control-allow-origin"],
+        "https://app.example.com"
+    );
+    assert_eq!(relayed.headers()["vary"], "Origin");
 }

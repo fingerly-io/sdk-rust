@@ -7,17 +7,240 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Canonical v3 signal-group and detector identifiers reported on events and
+/// archived risk assessments.
+pub mod signals {
+    /// Tor exit node network provenance.
+    pub const TOR: &str = "tor";
+    /// Datacenter proxy network provenance.
+    pub const DATACENTER_PROXY: &str = "datacenter_proxy";
+    /// Residential proxy network provenance.
+    pub const RESIDENTIAL_PROXY: &str = "residential_proxy";
+    /// VPN network provenance.
+    pub const VPN: &str = "vpn";
+    /// Public spam or attack blocklist match.
+    pub const IP_BLOCKLIST: &str = "ip_blocklist";
+    /// Recent IP abuse reputation match.
+    pub const IP_REPUTATION: &str = "ip_reputation";
+    /// Bogon or anycast network anomaly.
+    pub const NETWORK_ANOMALY: &str = "network_anomaly";
+    /// Device locale or timezone mismatch against network geography.
+    pub const LOCATION_SPOOFING: &str = "location_spoofing";
+    /// Xcode iOS simulator runtime.
+    pub const IOS_SIMULATOR: &str = "ios_simulator";
+    /// Android emulator runtime.
+    pub const ANDROID_EMULATOR: &str = "android_emulator";
+    /// Browser inside a virtual machine.
+    pub const VIRTUAL_MACHINE: &str = "virtual_machine";
+    /// Jailbroken iOS device.
+    pub const JAILBROKEN_DEVICE: &str = "jailbroken_device";
+    /// Rooted Android device.
+    pub const ROOTED_DEVICE: &str = "rooted_device";
+    /// App running inside a cloning framework.
+    pub const CLONED_APP: &str = "cloned_app";
+    /// Mass-provisioned or reset-fresh device farm indicators.
+    pub const DEVICE_FARM: &str = "device_farm";
+    /// Untrusted or intercepting TLS chain.
+    pub const MITM_ATTACK: &str = "mitm_attack";
+    /// Frida dynamic instrumentation toolkit detected.
+    pub const FRIDA_DETECTED: &str = "frida_detected";
+    /// Edited browser runtime or engine contradiction (group).
+    pub const BROWSER_TAMPERING: &str = "browser_tampering";
+    /// Edited client runtime or patched native bindings (detector).
+    pub const TAMPERING: &str = "tampering";
+    /// Report suppressed below minimum identifiability traits.
+    pub const FINGERPRINT_SUPPRESSED: &str = "fingerprint_suppressed";
+    /// Open inspector or attached debugger.
+    pub const DEVELOPER_TOOLS: &str = "developer_tools";
+    /// Session driven over remote desktop software.
+    pub const REMOTE_CONTROL: &str = "remote_control";
+    /// Automated script, headless agent, or declared bot.
+    pub const BOT: &str = "bot";
+    /// Abnormal request velocity from one device or network.
+    pub const HIGH_ACTIVITY: &str = "high_activity";
+    /// Private or incognito browsing mode.
+    pub const INCOGNITO_MODE: &str = "incognito_mode";
+    /// Hardened browser privacy posture.
+    pub const PRIVACY_SETTINGS: &str = "privacy_settings";
+    /// Page running inside an embedded in-app WebView.
+    pub const EMBEDDED_WEB_VIEW: &str = "embedded_web_view";
+    /// Active voice call during submission.
+    pub const ACTIVE_CALL: &str = "active_call";
+    /// Native device capable of hardware attestation presented none.
+    pub const ATTESTATION_MISSING: &str = "attestation_missing";
+    /// Hardware attestation failed cryptographic, chain, replay, or install checks.
+    pub const ATTESTATION_FAILED: &str = "attestation_failed";
+    /// Hardware, OS, capability, or worker-realm cross-signal contradiction.
+    pub const DEVICE_INCONSISTENT: &str = "device_inconsistent";
+    /// Required native security collectors omitted or selectively suppressed.
+    pub const REPORT_INCOMPLETE: &str = "report_incomplete";
+    /// Non-WebPKI system-trusted root CA without MITM interceptor markers.
+    pub const CUSTOM_ROOT_CA: &str = "custom_root_ca";
+    /// Managed Android work profile or secondary OS user profile.
+    pub const SECONDARY_USER_PROFILE: &str = "secondary_user_profile";
+}
+
 /// One signal group that contributed to an event's suspect score.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[non_exhaustive]
 pub struct EventTrigger {
-    /// The signal group, such as `vpn` or `bot`.
+    /// The signal group, such as `vpn`, `bot`, or `attestation_failed`.
     pub signal: String,
     /// The group's combined weight in this score.
     pub weight: i32,
     /// `low`, `medium` or `high`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub confidence: Option<String>,
+}
+
+/// Platform-neutral hardware attestation verdict inside an archived document.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[non_exhaustive]
+pub struct Attestation {
+    /// `attested`, `not_attested` or `failed`.
+    pub state: String,
+    /// Native platform (`ios` or `android`) when recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>,
+    /// `verified`, `indeterminate`, `invalid`, `absent` or `unconfigured`.
+    pub status: String,
+    /// Short stable reason token when attestation failed or was skipped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// Verified X.509 certificate chain length on Android registrations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chain_length: Option<i64>,
+    /// Android attestation security level (`software`, `trusted_environment`, `strongbox`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attestation_security_level: Option<String>,
+    /// Android KeyMint security level.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keymint_security_level: Option<String>,
+    /// Whether the bootloader reported locked in RootOfTrust.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device_locked: Option<bool>,
+    /// Verified boot state (`green`, `yellow`, `orange`, `red`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verified_boot_state: Option<String>,
+    /// Challenge nonce status when recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nonce: Option<String>,
+    /// Whether hardware revocation status was checked.
+    #[serde(default)]
+    pub revocation_checked: bool,
+    /// Whether the app package or bundle identifier matched the key scope.
+    #[serde(default)]
+    pub package_bound: bool,
+    /// Whether the signing certificate or Team ID matched the key scope.
+    #[serde(default)]
+    pub signer_bound: bool,
+    /// Attestation mode (`app_attest_register`, `app_attest_assert`, `android_key_register`, `android_key_assert`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    /// Verified Apple Team ID and bundle identifier (`<team>.<bundle>`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_id: Option<String>,
+    /// Attestation environment (`production` or `development`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment: Option<String>,
+    /// iOS App Attest receipt state (`stored`, `invalid` or `absent`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub receipt: Option<String>,
+    /// Apple App Attest 30-day key count metric when refreshed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub risk_metric: Option<i64>,
+    /// Age in hours of `risk_metric`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub risk_metric_age_h: Option<i64>,
+    /// Apple DeviceCheck token state (`held`, `unbound` or `unavailable`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device_check: Option<String>,
+    /// Decoded Google Play Integrity summary when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub play_integrity: Option<serde_json::Value>,
+}
+
+/// Client SDK metadata recorded in an archived event document.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[non_exhaustive]
+pub struct EventDocumentSdk {
+    /// Client SDK platform identifier.
+    #[serde(default)]
+    pub platform: String,
+    /// Client SDK version string.
+    #[serde(default)]
+    pub version: String,
+}
+
+/// One raw detector recorded inside an archived [`EventRiskReport`].
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[non_exhaustive]
+pub struct EventRiskTrigger {
+    /// Detector identifier, such as `attestation_failed` or `device_inconsistent`.
+    pub signal: String,
+    /// Weight applied under the active risk profile.
+    pub weight: i32,
+    /// Detector confidence (`low`, `medium` or `high`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<String>,
+    /// Short stable explanation token for this detector.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// Risk scoring assessment recorded inside an archived [`EventDocument`].
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[non_exhaustive]
+pub struct EventRiskReport {
+    /// Risk scoring platform (`web`, `ios` or `android`).
+    pub platform: String,
+    /// Weighted sum of triggered signals.
+    pub score: i32,
+    /// Banded risk level (`low`, `medium` or `high`).
+    pub level: String,
+    /// Suspect threshold active when scored.
+    pub threshold: i32,
+    /// Profile source (`key`, `organization` or `default`).
+    pub source: String,
+    /// Stored profile revision when applicable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<i64>,
+    /// Raw detectors that fired on this submission.
+    #[serde(default)]
+    pub triggers: Vec<EventRiskTrigger>,
+}
+
+/// Allow-listed view of an archived identification submission.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[non_exhaustive]
+pub struct EventDocument {
+    /// Document schema version.
+    pub schema: i32,
+    /// Identification request identifier.
+    pub request_id: String,
+    /// RFC 3339 timestamp of the submission.
+    pub occurred_at: String,
+    /// Client SDK platform and version.
+    #[serde(default)]
+    pub sdk: EventDocumentSdk,
+    /// Coarsened client IP network (`/24` IPv4 or `/40` IPv6).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ip_network: Option<String>,
+    /// City-level IP classification and detections.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ip: Option<serde_json::Value>,
+    /// Reason token when IP lookup did not complete.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ip_error: Option<String>,
+    /// Risk scoring breakdown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub risk: Option<EventRiskReport>,
+    /// Platform-neutral hardware attestation verdict.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attestation: Option<Attestation>,
+    /// Cross-request velocity decisions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub velocity: Option<serde_json::Value>,
 }
 
 /// A stored identification event.
@@ -31,12 +254,16 @@ pub struct EventTrigger {
 pub struct Event {
     /// The id identification returned, and the key event reads use.
     pub request_id: String,
-    /// The visitor this identification resolved to.
+    /// The visitor this identification resolved to, or `""` when the submission
+    /// was unidentifiable (`identifiable == false`).
     pub visitor_id: String,
     /// When the identification happened, as RFC 3339.
     pub occurred_at: String,
     /// `enriched`, or `unavailable` when the network lookup could not run.
     pub state: String,
+    /// Why enrichment did not happen, on an `unavailable` event.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
 
     /// The deployment the event was recorded in.
     pub environment: String,
@@ -137,6 +364,21 @@ pub struct Event {
 }
 
 impl Event {
+    /// Whether this event resolved to a non-empty visitor identifier.
+    pub fn is_identifiable(&self) -> bool {
+        !self.visitor_id.is_empty()
+    }
+
+    /// Parses [`Event::document`] into a typed [`EventDocument`] when present.
+    pub fn parse_document(&self) -> crate::Result<Option<EventDocument>> {
+        match &self.document {
+            None | Some(serde_json::Value::Null) => Ok(None),
+            Some(value) => serde_json::from_value(value.clone())
+                .map(Some)
+                .map_err(|error| crate::Error::decode(format!("document is invalid: {error}"))),
+        }
+    }
+
     /// Whether the API assigned this event a suspect score.
     ///
     /// Prefer it to a `None` check: it states the question being asked.

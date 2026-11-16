@@ -67,7 +67,10 @@ pub use crate::proxy::{
 };
 
 pub use crate::errors::{ApiError, Error, Result};
-pub use crate::models::{Event, EventPage, EventTrigger, SuspectLevel};
+pub use crate::models::{
+    signals, Attestation, Event, EventDocument, EventDocumentSdk, EventPage, EventRiskReport,
+    EventRiskTrigger, EventTrigger, SuspectLevel,
+};
 pub use crate::webhooks::{
     verify_webhook, WebhookEvent, WebhookVerifier, DEFAULT_WEBHOOK_TOLERANCE,
 };
