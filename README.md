@@ -333,7 +333,8 @@ reaches the browser as a `200`. A visitor who disconnects drops the service
 future, which cancels the upstream call.
 
 Each upstream failure is reported once: to `on_error` if you set one,
-otherwise as one `tracing` warning under the `fingerly::proxy` target.
+otherwise as one `tracing` warning under the `fingerly::proxy` target. The line
+names the kind of failure only, never the key or the upstream address.
 
 ```rust
 let proxy = FingerlyProxy::builder()
@@ -355,8 +356,10 @@ proxy answers whatever the router sends it.
 Do not set it under `nest_service` or any other router that strips the mount
 before the service sees it: the path would never match.
 
-`upstream` is for a test harness. Plain HTTP is refused, except for
-`127.0.0.1`, `localhost` or `[::1]` with `allow_insecure_loopback(true)`:
+`upstream` is for a test harness and is a bare origin only: `https://host` or
+`https://host:port`, with no path, query, fragment, credentials, whitespace or
+control byte. Plain HTTP is refused, except for `127.0.0.1`, `localhost` or
+`[::1]` with `allow_insecure_loopback(true)`:
 
 ```rust
 let proxy = FingerlyProxy::builder()

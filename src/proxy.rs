@@ -399,7 +399,7 @@ impl FingerlyProxy {
                 .body(body)
                 .send()
                 .await
-                .map_err(|error| (ProxyErrorKind::Upstream, error.to_string()))?;
+                .map_err(|error| (ProxyErrorKind::Upstream, describe(&error)))?;
             relay(response).await
         };
         let failure = match tokio::time::timeout_at(deadline, forward).await {
@@ -679,8 +679,10 @@ impl FingerlyProxyBuilder {
 
     /// Overrides the upstream origin implied by the key.
     ///
-    /// Plain HTTP is refused by [`FingerlyProxyBuilder::build`], except for a
-    /// loopback test harness with
+    /// It is a bare origin, `https://host` or `https://host:port`: a path,
+    /// query, fragment, credentials, whitespace or a control byte is refused
+    /// by [`FingerlyProxyBuilder::build`]. Plain HTTP is refused too, except
+    /// for a loopback test harness with
     /// [`FingerlyProxyBuilder::allow_insecure_loopback`].
     pub fn upstream(mut self, upstream: impl Into<String>) -> Self {
         self.upstream = Some(upstream.into());
@@ -900,6 +902,21 @@ fn with_cors(
     response
 }
 
+/// Names the kind of an upstream failure, never the URL, host or port it was
+/// sent to: the line ends up in logs that the upstream address is not for.
+fn describe(error: &reqwest::Error) -> String {
+    let kind = if error.is_timeout() {
+        "timed out"
+    } else if error.is_connect() {
+        "could not connect"
+    } else if error.is_body() || error.is_decode() {
+        "the answer broke off"
+    } else {
+        "request failed"
+    };
+    format!("upstream {kind}")
+}
+
 /// Returns the upstream answer to the browser, uncacheable and with only the
 /// allowlisted headers.
 ///
@@ -944,7 +961,7 @@ async fn relay(
     while let Some(chunk) = response
         .chunk()
         .await
-        .map_err(|error| (ProxyErrorKind::Upstream, error.to_string()))?
+        .map_err(|error| (ProxyErrorKind::Upstream, describe(&error)))?
     {
         if body.len() + chunk.len() > MAX_RELAY_BYTES {
             return Err(too_large());

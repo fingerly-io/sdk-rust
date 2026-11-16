@@ -134,26 +134,61 @@ pub(crate) fn normalize_origin(value: &str) -> Result<String> {
 #[cfg(feature = "proxy")]
 const LOOPBACK_HOSTS: [&str; 3] = ["127.0.0.1", "localhost", "[::1]"];
 
-/// Validates the proxy's upstream option.
+/// Validates the proxy's upstream option: a bare origin and nothing else.
 ///
-/// On top of [`normalize_origin`], the scheme is HTTPS. Plain HTTP is accepted
-/// only for a loopback host when `allow_insecure_loopback` is set. No error
-/// repeats the value.
+/// The value is printable ASCII with no space, an HTTPS scheme, a host and an
+/// optional port. No credentials, query, fragment or path (a lone `/` aside):
+/// the raw string is checked as well, because the URL parser resolves dot
+/// segments and drops an empty query or fragment. Plain HTTP is accepted only
+/// for a loopback host when `allow_insecure_loopback` is set. The returned
+/// origin is rebuilt from the parsed parts, and no error repeats the value.
 #[cfg(feature = "proxy")]
 pub(crate) fn normalize_upstream(value: &str, allow_insecure_loopback: bool) -> Result<String> {
-    let origin = normalize_origin(value)?;
-    let url = url::Url::parse(&origin).map_err(|_| Error::config("endpoint is not a URL"))?;
-    let loopback = url
-        .host_str()
-        .is_some_and(|host| LOOPBACK_HOSTS.contains(&host));
-    match url.scheme() {
-        "https" => Ok(origin),
-        "http" if allow_insecure_loopback && loopback => Ok(origin),
-        _ => Err(Error::config(
-            "a plain HTTP upstream is allowed only for 127.0.0.1, localhost or [::1], \
-             with allow_insecure_loopback set",
-        )),
+    let refuse = || {
+        Error::config(
+            "upstream must be a bare https:// origin: scheme, host and optional port only",
+        )
+    };
+
+    if value.is_empty() || !value.bytes().all(|b| (0x21..=0x7e).contains(&b)) {
+        return Err(refuse());
     }
+    let Some((_, rest)) = value.split_once("://") else {
+        return Err(refuse());
+    };
+    let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let (authority, tail) = rest.split_at(authority_end);
+    if authority.is_empty() || authority.contains('@') || !(tail.is_empty() || tail == "/") {
+        return Err(refuse());
+    }
+
+    let url = url::Url::parse(value).map_err(|_| refuse())?;
+    let Some(host) = url.host_str().filter(|host| !host.is_empty()) else {
+        return Err(refuse());
+    };
+    if !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || url.path() != "/"
+    {
+        return Err(refuse());
+    }
+    match url.scheme() {
+        "https" => {}
+        "http" if allow_insecure_loopback && LOOPBACK_HOSTS.contains(&host) => {}
+        "http" => {
+            return Err(Error::config(
+                "a plain HTTP upstream is allowed only for 127.0.0.1, localhost or [::1], \
+                 with allow_insecure_loopback set",
+            ))
+        }
+        _ => return Err(refuse()),
+    }
+    Ok(match url.port() {
+        Some(port) => format!("{}://{host}:{port}", url.scheme()),
+        None => format!("{}://{host}", url.scheme()),
+    })
 }
 
 /// Validates an API route version before it is spliced into a URL.
