@@ -300,7 +300,9 @@ stripped, restoring `x-fingerly-sdk-platform` only when it matches an exact
 lowercase native or bridge platform (`ios`, `android`, `react-native`,
 `react-native-ios`, `react-native-android`, `flutter`, `flutter-ios`,
 `flutter-android`, `lynx-ios`, `lynx-android`, `capacitor`,
-`kotlin-multiplatform`). When both `Origin` and a validated
+`kotlin-multiplatform`). A request carries one channel upstream: when `Origin`
+is present it is sent as `x-fingerly-origin` and the platform header is not
+sent, as on a direct call to the API. When both `Origin` and a validated
 `x-fingerly-sdk-platform` are absent, the request is rejected locally with `400`
 (`missing_origin`), and `x-fingerly-origin` is never synthesized from `Host`,
 `Referer` or the request URL. Bodies over 1 MiB get `413`. Alongside verified
@@ -352,6 +354,18 @@ let app = axum::Router::new().fallback_service(proxy);
 
 Do not set it under `nest_service` or any other router that strips the mount
 before the service sees it: the path would never match.
+
+`upstream` is for a test harness. Plain HTTP is refused, except for
+`127.0.0.1`, `localhost` or `[::1]` with `allow_insecure_loopback(true)`:
+
+```rust
+let proxy = FingerlyProxy::builder()
+    .proxy_key(std::env::var("FINGERLY_PROXY_KEY")?)
+    .upstream("http://127.0.0.1:8080")
+    .allow_insecure_loopback(true)
+    // ...
+    .build()?;
+```
 
 > **`client_ip` is the one thing you must get right.** Resolve it from a header
 > your own infrastructure sets, such as your load balancer's or CDN's, and fall

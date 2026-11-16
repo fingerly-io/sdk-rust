@@ -20,8 +20,8 @@ use http_body::Body;
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
 
 use crate::config::{
-    normalize_api_version, normalize_origin, normalize_path, parse_key, positive_duration, KeyKind,
-    KeyScope, DEFAULT_ENDPOINT,
+    normalize_api_version, normalize_origin, normalize_path, normalize_upstream, parse_key,
+    positive_duration, KeyKind, KeyScope, DEFAULT_ENDPOINT,
 };
 use crate::errors::{Error, Result};
 use crate::transport::USER_AGENT;
@@ -501,10 +501,11 @@ impl ProxyInner {
                 .map_err(|_| Error::config("the API key is not a valid header value"))?,
         );
         headers.insert(HeaderName::from_static("x-fingerly-client-ip"), client_ip);
+        // One channel only. A browser Origin wins, as it does on a direct
+        // call to the API, which refuses a proxied request naming both.
         if let Some(origin) = origin {
             headers.insert(HeaderName::from_static("x-fingerly-origin"), origin.clone());
-        }
-        if let Some(platform) = sdk_platform {
+        } else if let Some(platform) = sdk_platform {
             headers.insert(
                 HeaderName::from_static("x-fingerly-sdk-platform"),
                 HeaderValue::from_static(platform),
@@ -591,6 +592,7 @@ pub struct FingerlyProxyBuilder {
     secret_key: Option<String>,
     api_version: Option<String>,
     upstream: Option<String>,
+    allow_insecure_loopback: bool,
     path: Option<String>,
     max_body_bytes: Option<usize>,
     timeout: Option<Duration>,
@@ -667,8 +669,20 @@ impl FingerlyProxyBuilder {
     }
 
     /// Overrides the upstream origin implied by the key.
+    ///
+    /// Plain HTTP is refused by [`FingerlyProxyBuilder::build`], except for a
+    /// loopback test harness with
+    /// [`FingerlyProxyBuilder::allow_insecure_loopback`].
     pub fn upstream(mut self, upstream: impl Into<String>) -> Self {
         self.upstream = Some(upstream.into());
+        self
+    }
+
+    /// Accepts a plain `http://` upstream on `127.0.0.1`, `localhost` or
+    /// `[::1]`, for a local development or test harness. Off by default; any
+    /// other plain HTTP upstream is refused either way.
+    pub fn allow_insecure_loopback(mut self, allow: bool) -> Self {
+        self.allow_insecure_loopback = allow;
         self
     }
 
@@ -745,8 +759,10 @@ impl FingerlyProxyBuilder {
         };
         let scope = parse_key(&key, kind)?;
 
-        let upstream =
-            normalize_origin(&self.upstream.unwrap_or_else(|| DEFAULT_ENDPOINT.to_owned()))?;
+        let upstream = normalize_upstream(
+            self.upstream.as_deref().unwrap_or(DEFAULT_ENDPOINT),
+            self.allow_insecure_loopback,
+        )?;
         let api_version = normalize_api_version(self.api_version.as_deref().unwrap_or("v1"))?;
         let upstream_url = format!("{upstream}/api/{api_version}/ingest");
         let path = self.path.as_deref().map(normalize_path).transpose()?;

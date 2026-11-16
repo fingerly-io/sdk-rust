@@ -129,6 +129,33 @@ pub(crate) fn normalize_origin(value: &str) -> Result<String> {
     Ok(value.trim_end_matches('/').to_owned())
 }
 
+/// The hosts a plain HTTP proxy upstream may name, and only with the explicit
+/// development flag set.
+#[cfg(feature = "proxy")]
+const LOOPBACK_HOSTS: [&str; 3] = ["127.0.0.1", "localhost", "[::1]"];
+
+/// Validates the proxy's upstream option.
+///
+/// On top of [`normalize_origin`], the scheme is HTTPS. Plain HTTP is accepted
+/// only for a loopback host when `allow_insecure_loopback` is set. No error
+/// repeats the value.
+#[cfg(feature = "proxy")]
+pub(crate) fn normalize_upstream(value: &str, allow_insecure_loopback: bool) -> Result<String> {
+    let origin = normalize_origin(value)?;
+    let url = url::Url::parse(&origin).map_err(|_| Error::config("endpoint is not a URL"))?;
+    let loopback = url
+        .host_str()
+        .is_some_and(|host| LOOPBACK_HOSTS.contains(&host));
+    match url.scheme() {
+        "https" => Ok(origin),
+        "http" if allow_insecure_loopback && loopback => Ok(origin),
+        _ => Err(Error::config(
+            "a plain HTTP upstream is allowed only for 127.0.0.1, localhost or [::1], \
+             with allow_insecure_loopback set",
+        )),
+    }
+}
+
 /// Validates an API route version before it is spliced into a URL.
 ///
 /// The shape is `v` followed by a positive integer with no leading zero.

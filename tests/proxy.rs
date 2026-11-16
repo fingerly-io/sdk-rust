@@ -26,6 +26,7 @@ fn proxy(server: &TestServer) -> FingerlyProxy {
         .proxy_key(PROXY_KEY)
         .path(PATH)
         .upstream(&server.base_url)
+        .allow_insecure_loopback(true)
         .client_ip(|_parts| CLIENT_IP.to_owned())
         .build()
         .expect("the test options are valid")
@@ -178,6 +179,7 @@ async fn forwards_to_the_configured_version() {
         .proxy_key(PROXY_KEY)
         .api_version("v2")
         .upstream(&server.base_url)
+        .allow_insecure_loopback(true)
         .client_ip(|_| CLIENT_IP.to_owned())
         .build()
         .unwrap();
@@ -208,6 +210,7 @@ async fn matches_the_configured_path_exactly() {
         .proxy_key(PROXY_KEY)
         .path("/k7x2qm4a/")
         .upstream(&server.base_url)
+        .allow_insecure_loopback(true)
         .client_ip(|_| CLIENT_IP.to_owned())
         .build()
         .unwrap();
@@ -240,6 +243,7 @@ async fn answers_wherever_it_is_routed_without_a_path() {
     let proxy = FingerlyProxy::builder()
         .proxy_key(PROXY_KEY)
         .upstream(&server.base_url)
+        .allow_insecure_loopback(true)
         .client_ip(|_| CLIENT_IP.to_owned())
         .build()
         .unwrap();
@@ -342,6 +346,7 @@ async fn the_deprecated_secret_key_mode_authenticates_on_its_own() {
         .secret_key(SECRET_KEY)
         .path(PATH)
         .upstream(&server.base_url)
+        .allow_insecure_loopback(true)
         .client_ip(|_| CLIENT_IP.to_owned())
         .build()
         .unwrap();
@@ -377,6 +382,7 @@ async fn refuses_a_body_that_turns_out_too_large() {
         .proxy_key(PROXY_KEY)
         .path(PATH)
         .upstream(&server.base_url)
+        .allow_insecure_loopback(true)
         .max_body_bytes(16)
         .client_ip(|_| CLIENT_IP.to_owned())
         .build()
@@ -490,6 +496,7 @@ async fn answers_504_when_the_upstream_stalls() {
         .proxy_key(PROXY_KEY)
         .path(PATH)
         .upstream(&server.base_url)
+        .allow_insecure_loopback(true)
         .timeout(Duration::from_millis(100))
         .client_ip(|_| CLIENT_IP.to_owned())
         .build()
@@ -507,6 +514,7 @@ async fn answers_502_when_the_upstream_is_unreachable() {
         .path(PATH)
         // Port 1 is reserved and nothing listens on it.
         .upstream("http://127.0.0.1:1")
+        .allow_insecure_loopback(true)
         .client_ip(|_| CLIENT_IP.to_owned())
         .build()
         .unwrap();
@@ -536,6 +544,7 @@ async fn refuses_a_client_ip_that_is_not_one_address() {
             .proxy_key(PROXY_KEY)
             .path(PATH)
             .upstream(&server.base_url)
+            .allow_insecure_loopback(true)
             .client_ip(move |_| address.to_owned())
             .on_error(move |failure| hook.lock().unwrap().push(failure.clone()))
             .build()
@@ -572,6 +581,7 @@ async fn a_panicking_client_ip_is_answered_like_an_invalid_one() {
         .proxy_key(PROXY_KEY)
         .path(PATH)
         .upstream(&server.base_url)
+        .allow_insecure_loopback(true)
         .client_ip(|_| panic!("the header was not there"))
         .on_error(move |failure| hook.lock().unwrap().push(failure.clone()))
         .build()
@@ -597,6 +607,7 @@ async fn a_panicking_error_hook_does_not_lose_the_answer() {
         .proxy_key(PROXY_KEY)
         .path(PATH)
         .upstream("http://127.0.0.1:9")
+        .allow_insecure_loopback(true)
         .client_ip(|_| CLIENT_IP.to_owned())
         .on_error(|_| panic!("the hook is broken"))
         .build()
@@ -618,6 +629,7 @@ async fn forwards_a_valid_client_ip_canonically() {
             .proxy_key(PROXY_KEY)
             .path(PATH)
             .upstream(&server.base_url)
+            .allow_insecure_loopback(true)
             .client_ip(move |_| given.to_owned())
             .build()
             .unwrap();
@@ -635,6 +647,7 @@ async fn reads_the_address_from_the_request_the_integration_chose() {
         .proxy_key(PROXY_KEY)
         .path(PATH)
         .upstream(&server.base_url)
+        .allow_insecure_loopback(true)
         .client_ip(|parts| {
             parts
                 .headers
@@ -692,6 +705,7 @@ async fn mounts_straight_into_an_axum_router() {
     let proxy = FingerlyProxy::builder()
         .proxy_key(PROXY_KEY)
         .upstream(&upstream.base_url)
+        .allow_insecure_loopback(true)
         .client_ip(|_| CLIENT_IP.to_owned())
         .build()
         .unwrap();
@@ -772,6 +786,7 @@ fn proxy_to(upstream: &str, timeout: Duration, hook: fingerly_hook::Hook) -> Fin
         .proxy_key(PROXY_KEY)
         .path(PATH)
         .upstream(upstream)
+        .allow_insecure_loopback(true)
         .timeout(timeout)
         .client_ip(|_| CLIENT_IP.to_owned())
         .on_error(move |failure| hook.lock().unwrap().push(failure.clone()))
@@ -926,6 +941,7 @@ async fn a_burst_against_a_hostname_reuses_connections() {
     let proxy = FingerlyProxy::builder()
         .proxy_key(PROXY_KEY)
         .upstream(format!("http://localhost:{port}"))
+        .allow_insecure_loopback(true)
         .client_ip(|_| CLIENT_IP.to_owned())
         .build()
         .unwrap();
@@ -1207,6 +1223,7 @@ async fn answers_cors_preflight_and_exposes_allowlisted_headers_for_allowed_orig
         .proxy_key(PROXY_KEY)
         .path(PATH)
         .upstream(&server.base_url)
+        .allow_insecure_loopback(true)
         .allowed_origins(["https://app.example.com/"])
         .client_ip(|_| CLIENT_IP.to_owned())
         .build()
