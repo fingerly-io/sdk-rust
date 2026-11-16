@@ -56,6 +56,8 @@ pub mod signals {
     pub const REMOTE_CONTROL: &str = "remote_control";
     /// Automated script, headless agent, or declared bot.
     pub const BOT: &str = "bot";
+    /// Browser report with no `Sec-Fetch-*` headers from a browser that always sends them.
+    pub const FETCH_METADATA_MISSING: &str = "fetch_metadata_missing";
     /// Abnormal request velocity from one device or network.
     pub const HIGH_ACTIVITY: &str = "high_activity";
     /// Private or incognito browsing mode.
@@ -70,10 +72,15 @@ pub mod signals {
     pub const ATTESTATION_MISSING: &str = "attestation_missing";
     /// Hardware attestation failed cryptographic, chain, replay, or install checks.
     pub const ATTESTATION_FAILED: &str = "attestation_failed";
+    /// Unproven or rejected native report naming an install an attested key owns.
+    pub const ATTESTATION_DOWNGRADE: &str = "attestation_downgrade";
     /// Hardware, OS, capability, or worker-realm cross-signal contradiction.
     pub const DEVICE_INCONSISTENT: &str = "device_inconsistent";
-    /// Required native security collectors omitted or selectively suppressed.
+    /// Evidence a report always carries is missing: a required native security
+    /// source, or the web worker-realm cross-check.
     pub const REPORT_INCOMPLETE: &str = "report_incomplete";
+    /// Native security source that ran but lists probes that threw, were denied or timed out.
+    pub const PROBE_ERRORS: &str = "probe_errors";
     /// Non-WebPKI system-trusted root CA without MITM interceptor markers.
     pub const CUSTOM_ROOT_CA: &str = "custom_root_ca";
     /// Managed Android work profile or secondary OS user profile.
@@ -134,6 +141,14 @@ pub struct Attestation {
     /// Whether the signing certificate or Team ID matched the key scope.
     #[serde(default)]
     pub signer_bound: bool,
+    /// The app's own reason for sending no attestation (such as `not_offered`,
+    /// `unsupported` or `timeout`). Diagnostic only; it never lowers the score.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attest_skipped: Option<String>,
+    /// Whether an unproven or rejected report named an install an attested
+    /// device owns, so it was answered unidentifiable.
+    #[serde(default)]
+    pub downgrade: bool,
     /// Attestation mode (`app_attest_register`, `app_attest_assert`, `android_key_register`, `android_key_assert`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,

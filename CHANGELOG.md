@@ -6,8 +6,10 @@
   deferred supplement schemas and routes, and added `Event::reason`,
   `Event::is_identifiable()`, `Event::parse_document()`, `EventDocument`,
   `Attestation`, and the `signals` module covering all v3 signal identifiers
-  (`ATTESTATION_FAILED`, `DEVICE_INCONSISTENT`, `REPORT_INCOMPLETE`,
-  `TAMPERING`, `CUSTOM_ROOT_CA`, `SECONDARY_USER_PROFILE`).
+  (`ATTESTATION_FAILED`, `ATTESTATION_DOWNGRADE`, `DEVICE_INCONSISTENT`,
+  `REPORT_INCOMPLETE`, `PROBE_ERRORS`, `FETCH_METADATA_MISSING`, `TAMPERING`,
+  `CUSTOM_ROOT_CA`, `SECONDARY_USER_PROFILE`), with `attest_skipped` and
+  `downgrade` on `Attestation`.
 - Updated `FingerlyProxy` to enforce the single-path `proxy.md` relay contract:
   sanitize-and-restore validation of `x-fingerly-sdk-platform`, rejection with
   HTTP `400` (`missing_origin`) when both `Origin` and a valid

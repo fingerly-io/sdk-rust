@@ -140,11 +140,16 @@ there are no `deferred_token`, `deferred_signals` or `supplements` fields in
 
 The `fingerly::signals` module defines constants for every `v: 3` signal,
 including `signals::ATTESTATION_FAILED` (`"attestation_failed"`),
+`signals::ATTESTATION_DOWNGRADE` (`"attestation_downgrade"`),
 `signals::DEVICE_INCONSISTENT` (`"device_inconsistent"`),
 `signals::REPORT_INCOMPLETE` (`"report_incomplete"`),
+`signals::PROBE_ERRORS` (`"probe_errors"`),
+`signals::FETCH_METADATA_MISSING` (`"fetch_metadata_missing"`),
 `signals::TAMPERING` (`"tampering"`),
 `signals::CUSTOM_ROOT_CA` (`"custom_root_ca"`) and
-`signals::SECONDARY_USER_PROFILE` (`"secondary_user_profile"`).
+`signals::SECONDARY_USER_PROFILE` (`"secondary_user_profile"`). A native
+`Attestation` also carries `attest_skipped` (the app's reason for sending no
+proof) and `downgrade` (the report named an install an attested device owns).
 
 `Event::project_id` names the Fingerly project the event belongs to, as a UUID
 string. It is `None` when the server is older than projects.

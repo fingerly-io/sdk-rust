@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use common::{Canned, TestServer, SECRET_KEY};
-use fingerly::{signals, Error, Event, EventListParams, Fingerly, WebhookVerifier};
+use fingerly::{signals, Attestation, Error, Event, EventListParams, Fingerly, WebhookVerifier};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -327,6 +327,9 @@ async fn v3_openapi_and_models_match_single_path_contract() {
         signals::CUSTOM_ROOT_CA,
         signals::SECONDARY_USER_PROFILE,
     ];
+    assert_eq!(signals::ATTESTATION_DOWNGRADE, "attestation_downgrade");
+    assert_eq!(signals::PROBE_ERRORS, "probe_errors");
+    assert_eq!(signals::FETCH_METADATA_MISSING, "fetch_metadata_missing");
     let payload = serde_json::json!({
         "request_id": "req_v3_unidentifiable",
         "visitor_id": "",
@@ -412,4 +415,20 @@ async fn v3_openapi_and_models_match_single_path_contract() {
     assert!(attestation.revocation_checked);
     assert!(attestation.package_bound);
     assert!(!attestation.signer_bound);
+    assert_eq!(attestation.attest_skipped, None);
+    assert!(!attestation.downgrade);
+}
+
+#[test]
+fn attestation_reads_attest_skipped_and_downgrade() {
+    let attestation: Attestation = serde_json::from_value(serde_json::json!({
+        "state": "not_attested",
+        "platform": "ios",
+        "status": "absent",
+        "attest_skipped": "timeout",
+        "downgrade": true
+    }))
+    .expect("decode attestation");
+    assert_eq!(attestation.attest_skipped.as_deref(), Some("timeout"));
+    assert!(attestation.downgrade);
 }
