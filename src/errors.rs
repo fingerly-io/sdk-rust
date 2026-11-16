@@ -24,6 +24,9 @@ pub struct ApiError {
     /// `Retry-After` header, or `None` when it sent none. The SDK never
     /// retries a read itself.
     pub retry_after: Option<u64>,
+    /// Read through [`consumed_at`](Self::consumed_at). Boxed so the error
+    /// stays small enough to return by value.
+    pub(crate) consumed_at: Option<Box<str>>,
 }
 
 impl fmt::Display for ApiError {
@@ -50,6 +53,19 @@ impl ApiError {
     /// this key's environment, or the event is past retention.
     pub fn is_not_found(&self) -> bool {
         self.status == 404 && self.code.as_deref() == Some("event_not_found")
+    }
+
+    /// True for `409 event_already_consumed`: the event was consumed before,
+    /// at [`consumed_at`](Self::consumed_at).
+    pub fn is_already_consumed(&self) -> bool {
+        self.is(409, "event_already_consumed")
+    }
+
+    /// When the event was first consumed, as RFC 3339, for
+    /// `409 event_already_consumed`. `None` for every other error, or when the
+    /// API sent no time.
+    pub fn consumed_at(&self) -> Option<&str> {
+        self.consumed_at.as_deref()
     }
 
     /// Apple's HTTP status for `422 apple_rejected`, from the `apple_status`
@@ -163,6 +179,23 @@ impl Error {
     /// to try again.
     pub fn is_event_pending(&self) -> bool {
         matches!(self, Error::Api(api) if api.is_pending())
+    }
+
+    /// True when the event was consumed before (`409 event_already_consumed`);
+    /// see [`ApiError::is_already_consumed`].
+    /// [`consumed_at`](Self::consumed_at) says when.
+    pub fn is_event_already_consumed(&self) -> bool {
+        matches!(self, Error::Api(api) if api.is_already_consumed())
+    }
+
+    /// When the event was first consumed, as RFC 3339, for
+    /// `409 event_already_consumed`. `None` for any other error, or when the
+    /// API sent no time.
+    pub fn consumed_at(&self) -> Option<&str> {
+        match self {
+            Error::Api(api) if api.is_already_consumed() => api.consumed_at(),
+            _ => None,
+        }
     }
 
     /// True when an SDK deadline elapsed.

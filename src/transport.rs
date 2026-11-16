@@ -110,6 +110,16 @@ impl Transport {
         }
     }
 
+    /// Performs one POST without a body and parses its JSON answer. Never
+    /// retries, under the same deadline as a read.
+    pub(crate) async fn post_json(&self, path: &str) -> Result<serde_json::Value> {
+        let request = self.http.post(format!("{}{path}", self.base_url));
+        match tokio::time::timeout(self.timeout, self.send(request)).await {
+            Ok(result) => result,
+            Err(_) => Err(Error::Timeout),
+        }
+    }
+
     /// Spends a held DeviceCheck token: one POST or PUT with an optional JSON
     /// body, each attempt under its own deadline.
     ///
@@ -218,6 +228,7 @@ impl Transport {
             details: None,
             request_id: None,
             retry_after: None,
+            consumed_at: None,
         };
 
         let envelope: serde_json::Value =
@@ -228,7 +239,13 @@ impl Transport {
                 Err(_) => return error,
             };
 
-        if let Some(code) = envelope.pointer("/error/code").and_then(|v| v.as_str()) {
+        // The standard envelope nests the code; a bare `{"code": …}` body is
+        // read too.
+        if let Some(code) = envelope
+            .pointer("/error/code")
+            .or_else(|| envelope.get("code"))
+            .and_then(|v| v.as_str())
+        {
             error.code = Some(self.redact(code));
         }
         if let Some(details) = envelope.pointer("/error/details") {
@@ -238,6 +255,9 @@ impl Transport {
         if let Some(request_id) = envelope.get("request_id").and_then(|v| v.as_str()) {
             error.request_id = Some(self.redact(request_id));
         }
+        if error.is_already_consumed() {
+            error.consumed_at = consumed_at(&envelope).map(|at| self.redact(at).into());
+        }
         error
     }
 
@@ -245,6 +265,24 @@ impl Transport {
     fn redact(&self, value: &str) -> String {
         value.replace(&self.secret_key, "[redacted]")
     }
+}
+
+/// The time an `event_already_consumed` answer names: a top-level
+/// `consumed_at`, one inside `error`, or a `details` entry for that field.
+fn consumed_at(envelope: &serde_json::Value) -> Option<&str> {
+    envelope
+        .get("consumed_at")
+        .or_else(|| envelope.pointer("/error/consumed_at"))
+        .and_then(|v| v.as_str())
+        .or_else(|| {
+            envelope
+                .pointer("/error/details")?
+                .as_array()?
+                .iter()
+                .find(|detail| detail.get("field").and_then(|v| v.as_str()) == Some("consumed_at"))?
+                .get("issue")?
+                .as_str()
+        })
 }
 
 /// Names the kind of a connection failure, never the URL, host or port: the
@@ -320,16 +358,20 @@ fn parse_imf_fixdate(value: &str) -> Option<u64> {
     {
         return None;
     }
-    // Days from the civil date, after Howard Hinnant's algorithm.
+    let days = days_from_civil(year, month, day as i64);
+    let seconds = days * 86_400 + (hour * 3600 + minute * 60 + second) as i64;
+    u64::try_from(seconds).ok()
+}
+
+/// Days since the Unix epoch of a proleptic Gregorian date, after Howard
+/// Hinnant's algorithm. `month` is 1 to 12.
+pub(crate) fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     let y = if month <= 2 { year - 1 } else { year };
     let era = y.div_euclid(400);
     let yoe = y - era * 400;
-    let m = month as i64;
-    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + day as i64 - 1;
+    let doy = (153 * (if month > 2 { month - 3 } else { month + 9 }) + 2) / 5 + day - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146_097 + doe - 719_468;
-    let seconds = days * 86_400 + (hour * 3600 + minute * 60 + second) as i64;
-    u64::try_from(seconds).ok()
+    era * 146_097 + doe - 719_468
 }
 
 #[cfg(test)]

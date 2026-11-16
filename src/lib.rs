@@ -66,7 +66,10 @@ pub use crate::device_check::{
 };
 #[cfg(feature = "client")]
 #[cfg_attr(docsrs, doc(cfg(feature = "client")))]
-pub use crate::events::{EventListParams, EventsClient};
+pub use crate::events::{
+    ConsumedEvent, EventListParams, EventsClient, Verification, VerifyOptions, VerifyReason,
+    DEFAULT_MAX_AGE_SECONDS,
+};
 #[cfg(feature = "proxy")]
 #[cfg_attr(docsrs, doc(cfg(feature = "proxy")))]
 pub use crate::proxy::{

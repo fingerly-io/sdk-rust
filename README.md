@@ -158,16 +158,41 @@ string. It is `None` when the server is older than projects.
 
 ## Verify a backend action
 
-Read the event with a server-only key. Check that its tag matches your action,
-that it is recent, that its environment is correct, and that it was scored.
-Apply your own policy to the server's verdict. Do not authorize an action using
-scores or visitor identifiers supplied by the browser. Tags correlate events;
-they do not replace your application's authentication or replay protection.
-Never put a personal identifier (user ID, email, install ID, advertising ID) in
-a tag: the server keeps tags in long-lived rollups.
+Verify the event with a server-only key, then apply your own policy to the
+server's verdict. Do not authorize an action using scores or visitor
+identifiers supplied by the browser. Tags correlate events; they do not
+replace your application's authentication. Never put a personal identifier
+(user ID, email, install ID, advertising ID) in a tag: the server keeps tags
+in long-lived rollups.
+
+`fingerly.events().verify(request_id, options)` reads the event and runs these
+checks in order, stopping at the first that fails. It returns a
+`Verification` whose `ok` is `false` and whose `reason` names that check, as a
+`VerifyReason` with the wire value from `as_str()`:
+
+1. `not_found`: there is no such event (never issued, or past retention).
+2. `too_old`: it happened more than `max_age_seconds` ago (300 by default),
+   or its `occurred_at` cannot be read. A time in the future passes.
+3. `tag_mismatch`: a `tag` was given and the event's tag is not exactly that.
+   Without a `tag` this check is skipped; an empty `tag` is refused with
+   `Error::Config`.
+4. `unidentifiable`: the event has no visitor ID.
+5. `unscored`: the event has no suspect score.
+6. `already_consumed`: the event was consumed before.
+
+Consuming comes last and happens only when every other check passes, so one
+event backs one decision: the first `verify` consumes it, and any later one
+answers `already_consumed`. Pass `.consume(false)` to check without consuming.
+When everything passes, `ok` is `true`, `reason` is `None` and
+`reason_str()` is `""`. `event` holds the event read, and is `None` only for
+`not_found`.
+
+`verify` never judges the score, the level or the triggers: that policy stays
+with you, on the event it returns. Any other failure is returned as an error,
+including `event_pending`, which is not a verdict.
 
 ```rust
-use fingerly::{signals, Error, Event, Fingerly};
+use fingerly::{signals, Error, Fingerly, VerifyOptions};
 
 enum Verdict {
     Allow,
@@ -177,27 +202,41 @@ enum Verdict {
 }
 
 async fn verify(fingerly: &Fingerly, request_id: &str, tag: &str) -> Result<Verdict, Error> {
-    let event: Event = match fingerly.events().get(request_id).await {
-        Ok(event) => event,
+    let verification = match fingerly
+        .events()
+        .verify(request_id, VerifyOptions::new().tag(tag))
+        .await
+    {
+        Ok(verification) => verification,
         // Not decided yet, not fraud.
         Err(error) if error.is_event_pending() => {
             return Ok(Verdict::Pending(error.retry_after().unwrap_or(2)));
         }
-        Err(error) if error.is_event_not_found() => return Ok(Verdict::Refuse),
         Err(error) => return Err(error),
     };
-    if event.tag.as_deref() != Some(tag) || !event.is_scored() || !event.is_identifiable() {
+    if !verification.ok {
+        // verification.reason_str() says which check failed.
+        return Ok(Verdict::Refuse);
+    }
+    let Some(event) = verification.event else {
+        return Ok(Verdict::Refuse);
+    };
+    // Your score policy.
+    if event.suspect_level.as_deref() == Some("high") {
         return Ok(Verdict::Refuse);
     }
     if event.triggers.iter().any(|t| t.signal == signals::ATTESTATION_FAILED) {
         return Ok(Verdict::Refuse);
     }
-    if let Some(doc) = event.parse_document()? {
-        let _ = doc.attestation;
-    }
     Ok(Verdict::Allow)
 }
 ```
+
+`fingerly.events().consume(request_id)` consumes an event on its own. The
+first call returns a `ConsumedEvent` (`request_id`, `consumed_at` as RFC 3339,
+`first`); every later one fails with an error for which
+`error.is_event_already_consumed()` is true and `error.consumed_at()` says
+when the first call landed. Like a read, it is never retried.
 
 ## DeviceCheck bits on iOS
 
@@ -516,7 +555,7 @@ bump from silently raising it.
 
 `client.rs` holds `Fingerly` and its builder. `transport.rs` performs
 authenticated requests and maps failures to `Error::Api`. `events.rs` owns the
-event reads and the list filters; `models.rs` owns the types
+event reads, the list filters, consuming and verifying; `models.rs` owns the types
 they decode into. `webhooks.rs` verifies signatures and needs nothing else in
 the crate. `proxy.rs` is the same-origin service. `config.rs` validates every
 caller-supplied option: keys, origins, API versions, proxy paths and durations,

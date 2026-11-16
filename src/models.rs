@@ -270,9 +270,13 @@ pub struct Event {
     /// The id identification returned, and the key event reads use.
     pub request_id: String,
     /// The visitor this identification resolved to, or `""` when the submission
-    /// was unidentifiable (`identifiable == false`).
+    /// was unidentifiable (`identifiable == false`). A body without one reads
+    /// as `""`.
+    #[serde(default)]
     pub visitor_id: String,
-    /// When the identification happened, as RFC 3339.
+    /// When the identification happened, as RFC 3339. A body without one
+    /// reads as `""`, which `EventsClient::verify` refuses as too old.
+    #[serde(default)]
     pub occurred_at: String,
     /// `enriched`, or `unavailable` when the network lookup could not run.
     pub state: String,

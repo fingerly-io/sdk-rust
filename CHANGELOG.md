@@ -2,6 +2,12 @@
 
 ## 0.3.0
 
+- Added `events().verify(request_id, VerifyOptions)`, which reads an event and
+  checks it exists, is recent (`max_age_seconds`, 300 by default), carries the
+  expected `tag`, is identifiable and scored, then consumes it once, returning
+  a `Verification` with a `VerifyReason`; and `events().consume(request_id)`,
+  returning `ConsumedEvent`, with `Error::is_event_already_consumed()` and
+  `Error::consumed_at()` for `409 event_already_consumed`.
 - `Fingerly::device_check()` reads and writes the DeviceCheck bits of the
   device behind an iOS event: `query(request_id)` returns `DeviceCheckBits`,
   `write(request_id, DeviceCheckWrite)` returns `DeviceCheckWriteResult`. A
