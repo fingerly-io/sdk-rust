@@ -42,8 +42,12 @@
             "description": "Optional Google Play Integrity token with requestHash equal to hex(statementDigest)",
             "type": "string"
           },
+          "prev_assertion": {
+            "description": "iOS, app_attest_register only: standard Base64 CBOR App Attest assertion by the previous confirmed key (prev_key_id) with clientDataHash equal to statementDigest",
+            "type": "string"
+          },
           "prev_key_id": {
-            "description": "Optional retiring 64-char hex Android key ID during 24h lease rollover",
+            "description": "Optional key ID of the previous confirmed key: 64-char hex (Android) or standard Base64 App Attest key ID (iOS, app_attest_register only)",
             "type": "string"
           },
           "prev_signature": {
@@ -513,6 +517,10 @@
             ],
             "description": "Hardware attestation envelope bound to raw signals bytes (v3 native SDKs)"
           },
+          "attest_skipped": {
+            "description": "Native only, and only without attest: why the SDK sent no attestation. One of not_offered, unsupported, challenge_unavailable, key_error, timeout, backoff, install_unavailable. Diagnostic; it never lowers the score",
+            "type": "string"
+          },
           "consent": {
             "description": "The SDK's consent state; must be granted, or the request is refused with consent_required",
             "type": "string"
@@ -527,7 +535,7 @@
             "type": "object"
           },
           "tag": {
-            "description": "An opaque value echoed back on the event and kept in long-lived rollups. A label for your own systems, such as a client or app name; never a personal identifier (user ID, email, install ID or advertising ID)",
+            "description": "An opaque value echoed back on the event and kept in long-lived rollups. A label for your own systems, such as a client or app name; never a personal identifier (user ID, email, install ID or advertising ID). A value holding a control character (U+0000 to U+001F, U+007F) is refused with invalid_request",
             "type": "string"
           },
           "v": {
@@ -540,8 +548,12 @@
       },
       "IdentifyOut": {
         "properties": {
+          "attest_key_id": {
+            "description": "Native only, present whenever attest was sent: the key_id the server evaluated, copied from attest.key_id",
+            "type": "string"
+          },
           "attest_key_status": {
-            "description": "rekey_required when the presented v3 attestation key is unknown or expired",
+            "description": "Native only, present whenever attest was sent: registered (the key was verified, stored and owns the install), valid (an assertion verified against a stored key), rekey_required (the key is unknown or expired), rejected (attestation failed)",
             "type": "string"
           },
           "duplicate": {
@@ -656,6 +668,10 @@
             ],
             "description": "Hardware attestation envelope bound to raw signals bytes (v3 native SDKs)"
           },
+          "attest_skipped": {
+            "description": "Native only, and only without attest: why the SDK sent no attestation. One of not_offered, unsupported, challenge_unavailable, key_error, timeout, backoff, install_unavailable. Diagnostic; it never lowers the score",
+            "type": "string"
+          },
           "consent": {
             "description": "The SDK's consent state; must be granted, or the request is refused with consent_required",
             "type": "string"
@@ -670,7 +686,7 @@
             "type": "object"
           },
           "tag": {
-            "description": "An opaque value echoed back on the event and kept in long-lived rollups; never a personal identifier",
+            "description": "An opaque value echoed back on the event and kept in long-lived rollups; never a personal identifier. A value holding a control character (U+0000 to U+001F, U+007F) is refused with invalid_request",
             "type": "string"
           },
           "v": {
@@ -5333,8 +5349,11 @@
                     ]
                   },
                   "hide_client_score": {
-                    "description": "Withhold suspect_score and suspect_level from a browser, an app, a proxy and a hosted domain. Defaults to false",
-                    "type": "boolean"
+                    "description": "Withhold suspect_score and suspect_level from a browser, an app, a proxy and a hosted domain. Defaults to true for a public key and false for a secret key",
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
                   },
                   "kind": {
                     "description": "public or secret",

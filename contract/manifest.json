@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "serverCommit": "c3deba4d383e5b92f9708a1570c125c3c9531023",
+  "serverCommit": "597aa2d131a3a7849b357aea9e1c78979ce509fd",
   "files": {
-    "openapi.json": "7a0f21ed27c7b01901f7be80b8070cc792b94d4c5bf239c0f0bee4e19662044d",
+    "openapi.json": "02f0f08285f49f18d903d6a926695c1fc76cd70e5f93979799468112584bc807",
     "fixtures.json": "3fbf2efbcf3c8ebced3d2c9f2a3c1f5752ee94ece63d5c110291d9a8251ff68f"
   }
 }
