@@ -901,6 +901,14 @@ async fn relay(
     mut response: reqwest::Response,
 ) -> std::result::Result<Response<Full<Bytes>>, (ProxyErrorKind, String)> {
     let status = response.status();
+    // A redirect is never followed or passed on: only a final answer is
+    // relayed.
+    if status.is_redirection() {
+        return Err((
+            ProxyErrorKind::Upstream,
+            format!("upstream answered status {}", status.as_u16()),
+        ));
+    }
     let mut headers = http::HeaderMap::new();
     for name in RELAYED_HEADERS {
         if let Some(value) = response.headers().get(name) {

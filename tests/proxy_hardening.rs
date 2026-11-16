@@ -120,3 +120,27 @@ fn the_loopback_flag_admits_loopback_hosts_only() {
     assert!(strict("https://upstream.invalid").build().is_ok());
     assert!(strict("https://upstream.invalid:8443/").build().is_ok());
 }
+
+#[tokio::test]
+async fn an_upstream_redirect_is_a_502_and_never_followed_by_a_supplied_stack() {
+    let target = TestServer::always(ok()).await;
+    for status in [301u16, 302, 303, 307, 308] {
+        let hop = TestServer::always(
+            Canned::json(status, "{}").header("location", &format!("{}/steal", target.base_url)),
+        )
+        .await;
+        let proxy = builder(&hop.base_url)
+            .http_client_builder(
+                reqwest::Client::builder().redirect(reqwest::redirect::Policy::limited(10)),
+            )
+            .on_error(|_| {})
+            .build()
+            .unwrap();
+        let response = proxy.handle(browser(PATH).body(body()).unwrap()).await;
+        assert_eq!(hop.request_count(), 1);
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY, "{status}");
+        assert!(response.headers().get("location").is_none());
+        assert_eq!(response.headers()["cache-control"], "no-store");
+    }
+    assert_eq!(target.request_count(), 0, "the redirect was followed");
+}

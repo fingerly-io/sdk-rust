@@ -319,7 +319,9 @@ One deadline, `timeout` (5 seconds by default), covers reading the browser's
 body and the whole upstream exchange, so a trickling answer cannot stretch it.
 When it passes during the upstream call the browser gets `504`; any other
 upstream failure (refused, reset, DNS, a truncated or malformed answer, an
-answer over 4 MiB) gets `502`; a browser too slow to send its body gets `408`.
+answer over 4 MiB, a redirect) gets `502`.
+Redirects are never followed, also with a caller-supplied
+`http_client_builder`. A browser too slow to send its body gets `408`.
 Each carries a short `text/plain` body and `Cache-Control: no-store`. The
 answer is read in full before anything is relayed, so a broken upstream never
 reaches the browser as a `200`. A visitor who disconnects drops the service
