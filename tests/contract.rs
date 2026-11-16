@@ -58,6 +58,7 @@ async fn serving(fixture: &ResponseFixture) -> TestServer {
 fn client(server: &TestServer) -> Fingerly {
     Fingerly::builder(SECRET_KEY)
         .endpoint(&server.base_url)
+        .allow_insecure_loopback(true)
         .build()
         .unwrap()
 }

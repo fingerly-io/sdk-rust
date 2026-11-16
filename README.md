@@ -25,6 +25,19 @@ local API. Public, proxy, management, malformed and unsupported keys are
 rejected before network access. Requests do not follow redirects. `get` and
 `list` each perform one request and never retry.
 
+`endpoint` is a bare origin only: `https://host` or `https://host:port`, with
+no path, query, fragment, credentials, whitespace or control byte. Plain HTTP
+is refused, except for `127.0.0.1`, `localhost` or `[::1]` with
+`allow_insecure_loopback(true)`. Neither a construction error nor a connection
+error repeats the endpoint or the key:
+
+```rust
+let fingerly = Fingerly::builder(std::env::var("FINGERLY_SECRET_KEY")?)
+    .endpoint("http://127.0.0.1:8080")
+    .allow_insecure_loopback(true)
+    .build()?;
+```
+
 `Fingerly::new` returns a `Result`, so an invalid key or option fails at
 construction and nothing is sent. The client holds a connection pool; build
 one and clone it, and every clone shares the pool. Every client and proxy in

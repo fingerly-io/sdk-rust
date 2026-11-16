@@ -11,6 +11,7 @@ use fingerly::{Error, Fingerly};
 fn client(server: &TestServer) -> Fingerly {
     Fingerly::builder(SECRET_KEY)
         .endpoint(&server.base_url)
+        .allow_insecure_loopback(true)
         .build()
         .expect("the test key and endpoint are valid")
 }
@@ -53,6 +54,7 @@ fn accepts_a_secret_key_for_every_environment() {
 fn validates_the_key_even_with_an_endpoint() {
     let error = Fingerly::builder(PUBLIC_KEY)
         .endpoint("http://127.0.0.1:1")
+        .allow_insecure_loopback(true)
         .build()
         .expect_err("a public key is not a secret key");
     assert!(matches!(error, Error::Config { .. }));
@@ -67,6 +69,17 @@ fn refuses_an_endpoint_that_would_leak_or_rewrite_the_request() {
         "ftp://api.example.com",
         "not a url",
         "",
+        "https://api.example.com/prefix",
+        "https://api.example.com/a/../b",
+        "https://api.example.com//",
+        "https://api.example.com?",
+        "https://api.example.com#",
+        "https://api.example.com\n",
+        "https://api.example.com ",
+        " https://api.example.com",
+        "https://api.example.com\r\nx-injected: 1",
+        "https://api.example.com\t",
+        "http://api.example.com",
     ] {
         let error = Fingerly::builder(SECRET_KEY)
             .endpoint(endpoint)
@@ -76,7 +89,66 @@ fn refuses_an_endpoint_that_would_leak_or_rewrite_the_request() {
             matches!(error, Error::Config { .. }),
             "{endpoint:?} produced {error:?}"
         );
+        let printed = format!("{error} | {error:?}");
+        assert!(
+            !printed.contains("api.example.com") && !printed.contains(SECRET_KEY),
+            "the error repeats the value or the key: {printed}"
+        );
     }
+}
+
+#[test]
+fn a_plain_http_endpoint_needs_the_loopback_flag_and_a_loopback_host() {
+    let build = |endpoint: &str, allow: bool| {
+        Fingerly::builder(SECRET_KEY)
+            .endpoint(endpoint)
+            .allow_insecure_loopback(allow)
+            .build()
+    };
+    for endpoint in [
+        "http://127.0.0.1:8080",
+        "http://localhost:8080",
+        "http://[::1]:8080",
+    ] {
+        assert!(
+            build(endpoint, false).is_err(),
+            "{endpoint:?} without the flag"
+        );
+        assert!(build(endpoint, true).is_ok(), "{endpoint:?} with the flag");
+    }
+    for endpoint in [
+        "http://api.example.com",
+        "http://192.0.2.10:8080",
+        "http://127.0.0.2",
+        "http://localhost.example.com",
+    ] {
+        assert!(build(endpoint, true).is_err(), "{endpoint:?} was accepted");
+    }
+    assert!(build("https://api.example.com", false).is_ok());
+    assert!(build("https://api.example.com:8443/", false).is_ok());
+}
+
+/// A connection failure names its kind, never the API address or the key.
+#[tokio::test]
+async fn a_connection_failure_names_neither_the_endpoint_nor_the_key() {
+    let error = Fingerly::builder(SECRET_KEY)
+        .endpoint("http://127.0.0.1:1")
+        .allow_insecure_loopback(true)
+        .timeout(Duration::from_secs(2))
+        .build()
+        .unwrap()
+        .events()
+        .get("req_1")
+        .await
+        .unwrap_err();
+    let printed = format!("{error} | {error:?}");
+    assert!(matches!(error, Error::Connection { .. }), "got {printed}");
+    assert!(
+        !printed.contains("127.0.0.1")
+            && !printed.contains("/api/v1")
+            && !printed.contains(SECRET_KEY),
+        "the error names the endpoint or the key: {printed}"
+    );
 }
 
 #[test]
@@ -127,6 +199,7 @@ async fn honours_a_custom_api_version() {
     let server = TestServer::always(Canned::json(200, event_body("req_1"))).await;
     Fingerly::builder(SECRET_KEY)
         .endpoint(&server.base_url)
+        .allow_insecure_loopback(true)
         .api_version("v2")
         .build()
         .unwrap()
@@ -225,6 +298,7 @@ async fn reports_the_status_of_an_error_body_that_breaks_off() {
 
     let error = Fingerly::builder(SECRET_KEY)
         .endpoint(format!("http://{address}"))
+        .allow_insecure_loopback(true)
         .build()
         .unwrap()
         .events()
@@ -267,6 +341,7 @@ async fn times_out_a_response_that_never_finishes() {
 
     let error = Fingerly::builder(SECRET_KEY)
         .endpoint(&server.base_url)
+        .allow_insecure_loopback(true)
         .timeout(Duration::from_millis(100))
         .build()
         .unwrap()
@@ -285,6 +360,7 @@ async fn reports_an_unreachable_api_as_a_connection_failure() {
     let error = Fingerly::builder(SECRET_KEY)
         // Port 1 is reserved and nothing listens on it.
         .endpoint("http://127.0.0.1:1")
+        .allow_insecure_loopback(true)
         .timeout(Duration::from_secs(2))
         .build()
         .unwrap()

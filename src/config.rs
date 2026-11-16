@@ -107,11 +107,11 @@ pub(crate) fn parse_key(key: &str, expected: KeyKind) -> Result<KeyScope> {
     Ok(KeyScope { environment })
 }
 
-/// Normalises a caller-supplied API origin.
+/// Normalises a caller-supplied browser origin, for the proxy's CORS list.
 ///
-/// Credentials, queries and fragments are refused: they would be attached to
-/// every authenticated request, and embedded credentials would leak on a
-/// redirect. The result has no trailing slash.
+/// Credentials, queries and fragments are refused. The result has no trailing
+/// slash.
+#[cfg(feature = "proxy")]
 pub(crate) fn normalize_origin(value: &str) -> Result<String> {
     let refuse =
         || Error::config("endpoint must be an HTTP(S) URL without credentials, query, or fragment");
@@ -129,12 +129,13 @@ pub(crate) fn normalize_origin(value: &str) -> Result<String> {
     Ok(value.trim_end_matches('/').to_owned())
 }
 
-/// The hosts a plain HTTP proxy upstream may name, and only with the explicit
+/// The hosts a plain HTTP API origin may name, and only with the explicit
 /// development flag set.
-#[cfg(feature = "proxy")]
 const LOOPBACK_HOSTS: [&str; 3] = ["127.0.0.1", "localhost", "[::1]"];
 
-/// Validates the proxy's upstream option: a bare origin and nothing else.
+/// Validates a caller-supplied API origin, the client's `endpoint` or the
+/// proxy's `upstream` (named by `option` in the error): a bare origin and
+/// nothing else.
 ///
 /// The value is printable ASCII with no space, an HTTPS scheme, a host and an
 /// optional port. No credentials, query, fragment or path (a lone `/` aside):
@@ -142,12 +143,15 @@ const LOOPBACK_HOSTS: [&str; 3] = ["127.0.0.1", "localhost", "[::1]"];
 /// segments and drops an empty query or fragment. Plain HTTP is accepted only
 /// for a loopback host when `allow_insecure_loopback` is set. The returned
 /// origin is rebuilt from the parsed parts, and no error repeats the value.
-#[cfg(feature = "proxy")]
-pub(crate) fn normalize_upstream(value: &str, allow_insecure_loopback: bool) -> Result<String> {
+pub(crate) fn normalize_api_origin(
+    value: &str,
+    allow_insecure_loopback: bool,
+    option: &'static str,
+) -> Result<String> {
     let refuse = || {
-        Error::config(
-            "upstream must be a bare https:// origin: scheme, host and optional port only",
-        )
+        Error::config(format!(
+            "{option} must be a bare https:// origin: scheme, host and optional port only"
+        ))
     };
 
     if value.is_empty() || !value.bytes().all(|b| (0x21..=0x7e).contains(&b)) {
@@ -178,10 +182,10 @@ pub(crate) fn normalize_upstream(value: &str, allow_insecure_loopback: bool) -> 
         "https" => {}
         "http" if allow_insecure_loopback && LOOPBACK_HOSTS.contains(&host) => {}
         "http" => {
-            return Err(Error::config(
-                "a plain HTTP upstream is allowed only for 127.0.0.1, localhost or [::1], \
-                 with allow_insecure_loopback set",
-            ))
+            return Err(Error::config(format!(
+                "a plain HTTP {option} is allowed only for 127.0.0.1, localhost or [::1], \
+                 with allow_insecure_loopback set"
+            )))
         }
         _ => return Err(refuse()),
     }

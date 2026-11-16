@@ -20,7 +20,7 @@ use http_body::Body;
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
 
 use crate::config::{
-    normalize_api_version, normalize_origin, normalize_path, normalize_upstream, parse_key,
+    normalize_api_origin, normalize_api_version, normalize_origin, normalize_path, parse_key,
     positive_duration, KeyKind, KeyScope, DEFAULT_ENDPOINT,
 };
 use crate::errors::{Error, Result};
@@ -770,9 +770,10 @@ impl FingerlyProxyBuilder {
         };
         let scope = parse_key(&key, kind)?;
 
-        let upstream = normalize_upstream(
+        let upstream = normalize_api_origin(
             self.upstream.as_deref().unwrap_or(DEFAULT_ENDPOINT),
             self.allow_insecure_loopback,
+            "upstream",
         )?;
         let api_version = normalize_api_version(self.api_version.as_deref().unwrap_or("v1"))?;
         let upstream_url = format!("{upstream}/api/{api_version}/ingest");

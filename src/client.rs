@@ -46,6 +46,7 @@ impl Fingerly {
         FingerlyBuilder {
             secret_key: secret_key.into(),
             endpoint: None,
+            allow_insecure_loopback: false,
             api_version: None,
             timeout: None,
             http_client_builder: None,
@@ -62,6 +63,7 @@ impl Fingerly {
 pub struct FingerlyBuilder {
     secret_key: String,
     endpoint: Option<String>,
+    allow_insecure_loopback: bool,
     api_version: Option<String>,
     timeout: Option<Duration>,
     http_client_builder: Option<reqwest::ClientBuilder>,
@@ -83,8 +85,21 @@ impl std::fmt::Debug for FingerlyBuilder {
 impl FingerlyBuilder {
     /// Overrides the Fingerly API origin, for a local or self-hosted API. The
     /// key still decides which kind of key is accepted.
+    ///
+    /// It is a bare origin, `https://host` or `https://host:port`: a path,
+    /// query, fragment, credentials, whitespace or a control byte is refused
+    /// by [`FingerlyBuilder::build`]. Plain HTTP is refused too, except for a
+    /// loopback API with [`FingerlyBuilder::allow_insecure_loopback`].
     pub fn endpoint(mut self, endpoint: impl Into<String>) -> Self {
         self.endpoint = Some(endpoint.into());
+        self
+    }
+
+    /// Accepts a plain `http://` endpoint on `127.0.0.1`, `localhost` or
+    /// `[::1]`, for a local development or test API. Off by default; any other
+    /// plain HTTP endpoint is refused either way.
+    pub fn allow_insecure_loopback(mut self, allow: bool) -> Self {
+        self.allow_insecure_loopback = allow;
         self
     }
 
@@ -121,6 +136,7 @@ impl FingerlyBuilder {
         let transport = Transport::new(
             self.secret_key,
             self.endpoint,
+            self.allow_insecure_loopback,
             self.api_version,
             self.timeout,
             self.http_client_builder,

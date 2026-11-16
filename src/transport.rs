@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use crate::config::{
-    normalize_api_version, normalize_origin, parse_key, positive_duration, KeyKind,
+    normalize_api_origin, normalize_api_version, parse_key, positive_duration, KeyKind,
     DEFAULT_ENDPOINT,
 };
 use crate::errors::{ApiError, Error, Result};
@@ -56,12 +56,17 @@ impl Transport {
     pub(crate) fn new(
         secret_key: String,
         endpoint: Option<String>,
+        allow_insecure_loopback: bool,
         api_version: Option<String>,
         timeout: Option<Duration>,
         builder: Option<reqwest::ClientBuilder>,
     ) -> Result<Self> {
         parse_key(&secret_key, KeyKind::Secret)?;
-        let origin = normalize_origin(&endpoint.unwrap_or_else(|| DEFAULT_ENDPOINT.to_owned()))?;
+        let origin = normalize_api_origin(
+            endpoint.as_deref().unwrap_or(DEFAULT_ENDPOINT),
+            allow_insecure_loopback,
+            "endpoint",
+        )?;
         let api_version = normalize_api_version(api_version.as_deref().unwrap_or("v1"))?;
         let timeout = positive_duration(timeout.unwrap_or(DEFAULT_TIMEOUT), "timeout")?;
 
@@ -102,7 +107,7 @@ impl Transport {
             .header("accept", "application/json")
             .send()
             .await
-            .map_err(|error| Error::connection(self.redact(&error.to_string())))?;
+            .map_err(|error| Error::connection(failure_kind(&error)))?;
 
         let status = response.status();
         let request_id = header_text(&response, "x-request-id");
@@ -137,7 +142,7 @@ impl Transport {
         while let Some(chunk) = response
             .chunk()
             .await
-            .map_err(|error| Error::connection(self.redact(&error.to_string())))?
+            .map_err(|error| Error::connection(failure_kind(&error)))?
         {
             if body.len() + chunk.len() > MAX_RESPONSE_BODY {
                 return Err(too_large());
@@ -184,6 +189,20 @@ impl Transport {
     /// Strips the secret key from anything an error may carry to logs.
     fn redact(&self, value: &str) -> String {
         value.replace(&self.secret_key, "[redacted]")
+    }
+}
+
+/// Names the kind of a connection failure, never the URL, host or port: the
+/// message ends up in logs that the API address is not for.
+fn failure_kind(error: &reqwest::Error) -> &'static str {
+    if error.is_timeout() {
+        "the request timed out"
+    } else if error.is_connect() {
+        "could not connect to the API"
+    } else if error.is_body() || error.is_decode() {
+        "the answer broke off"
+    } else {
+        "the request failed"
     }
 }
 
