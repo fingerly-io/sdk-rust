@@ -319,7 +319,7 @@ One deadline, `timeout` (5 seconds by default), covers reading the browser's
 body and the whole upstream exchange, so a trickling answer cannot stretch it.
 When it passes during the upstream call the browser gets `504`; any other
 upstream failure (refused, reset, DNS, a truncated or malformed answer, an
-answer over 4 MiB, a redirect) gets `502`.
+answer over 4 MiB, a redirect, a status outside 200 to 599) gets `502`.
 Redirects are never followed, also with a caller-supplied
 `http_client_builder`. A browser too slow to send its body gets `408`.
 Each carries a short `text/plain` body and `Cache-Control: no-store`. The

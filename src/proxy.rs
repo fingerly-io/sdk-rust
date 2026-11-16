@@ -901,9 +901,9 @@ async fn relay(
     mut response: reqwest::Response,
 ) -> std::result::Result<Response<Full<Bytes>>, (ProxyErrorKind, String)> {
     let status = response.status();
-    // A redirect is never followed or passed on: only a final answer is
-    // relayed.
-    if status.is_redirection() {
+    // Only a final answer is relayed: a redirect is never followed or passed
+    // on, and a status outside 200 to 599 is not one a browser understands.
+    if !(200..=599).contains(&status.as_u16()) || status.is_redirection() {
         return Err((
             ProxyErrorKind::Upstream,
             format!("upstream answered status {}", status.as_u16()),

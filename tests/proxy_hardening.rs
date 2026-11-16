@@ -4,6 +4,8 @@
 
 mod common;
 
+use std::time::Duration;
+
 use bytes::Bytes;
 use common::{Canned, TestServer, PROXY_KEY, PUBLIC_KEY};
 use fingerly::FingerlyProxy;
@@ -119,6 +121,57 @@ fn the_loopback_flag_admits_loopback_hosts_only() {
     }
     assert!(strict("https://upstream.invalid").build().is_ok());
     assert!(strict("https://upstream.invalid:8443/").build().is_ok());
+}
+
+/// A raw upstream that answers every connection with `answer`.
+async fn raw_upstream(answer: &'static [u8]) -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        while let Ok((mut socket, _)) = listener.accept().await {
+            tokio::spawn(async move {
+                let mut buffer = [0u8; 8192];
+                let _ = socket.read(&mut buffer).await;
+                let _ = socket.write_all(answer).await;
+                tokio::time::sleep(Duration::from_millis(300)).await;
+            });
+        }
+    });
+    format!("http://{address}")
+}
+
+#[tokio::test]
+async fn an_upstream_status_outside_200_to_599_is_a_502() {
+    for (answer, label) in [
+        (
+            &b"HTTP/1.1 600 Odd\r\ncontent-type: application/json\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}"[..],
+            "600",
+        ),
+        (
+            &b"HTTP/1.1 700 Odd\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}"[..],
+            "700",
+        ),
+        (
+            &b"HTTP/1.1 999 Odd\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}"[..],
+            "999",
+        ),
+        (
+            &b"HTTP/1.1 099 Odd\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}"[..],
+            "099",
+        ),
+    ] {
+        let upstream = raw_upstream(answer).await;
+        let proxy = builder(&upstream).on_error(|_| {}).build().unwrap();
+        let response = proxy.handle(browser(PATH).body(body()).unwrap()).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::BAD_GATEWAY,
+            "an upstream {label} was relayed as {}",
+            response.status()
+        );
+        assert_eq!(response.headers()["cache-control"], "no-store");
+    }
 }
 
 #[tokio::test]
