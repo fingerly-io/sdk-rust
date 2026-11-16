@@ -4,7 +4,7 @@ Server-side event reads, webhook verification and a same-origin proxy for Rust.
 Rust 1.88 or newer, async on Tokio.
 
 ```sh
-cargo add fingerly
+cargo add fingerly@0.3.0
 ```
 
 ```rust
@@ -117,7 +117,21 @@ If the event is not recorded yet, the error has `is_event_pending()` and a
 past retention.
 
 The archived `document` arrives moments after the event itself, so check
-`has_document` rather than assuming it is there.
+`has_document` rather than assuming it is there, and call
+`event.parse_document()?` to decode it into `Option<EventDocument>` (including
+`Attestation` and `EventRiskReport`). When a submission is unidentifiable
+(`!event.is_identifiable()`, such as insufficient entropy, a genuine embedded
+WebView, or an unmatched high-risk Web payload), `event.visitor_id` is `""`;
+there are no `deferred_token`, `deferred_signals` or `supplements` fields in
+`v: 3`.
+
+The `fingerly::signals` module defines constants for every `v: 3` signal,
+including `signals::ATTESTATION_FAILED` (`"attestation_failed"`),
+`signals::DEVICE_INCONSISTENT` (`"device_inconsistent"`),
+`signals::REPORT_INCOMPLETE` (`"report_incomplete"`),
+`signals::TAMPERING` (`"tampering"`),
+`signals::CUSTOM_ROOT_CA` (`"custom_root_ca"`) and
+`signals::SECONDARY_USER_PROFILE` (`"secondary_user_profile"`).
 
 `Event::project_id` names the Fingerly project the event belongs to, as a UUID
 string. It is `None` when the server is older than projects.
@@ -133,7 +147,7 @@ Never put a personal identifier (user ID, email, install ID, advertising ID) in
 a tag: the server keeps tags in long-lived rollups.
 
 ```rust
-use fingerly::{Error, Event, Fingerly};
+use fingerly::{signals, Error, Event, Fingerly};
 
 enum Verdict {
     Allow,
@@ -152,8 +166,14 @@ async fn verify(fingerly: &Fingerly, request_id: &str, tag: &str) -> Result<Verd
         Err(error) if error.is_event_not_found() => return Ok(Verdict::Refuse),
         Err(error) => return Err(error),
     };
-    if event.tag.as_deref() != Some(tag) || !event.is_scored() {
+    if event.tag.as_deref() != Some(tag) || !event.is_scored() || !event.is_identifiable() {
         return Ok(Verdict::Refuse);
+    }
+    if event.triggers.iter().any(|t| t.signal == signals::ATTESTATION_FAILED) {
+        return Ok(Verdict::Refuse);
+    }
+    if let Some(doc) = event.parse_document()? {
+        let _ = doc.attestation;
     }
     Ok(Verdict::Allow)
 }
@@ -189,7 +209,7 @@ Webhook verification needs neither an HTTP stack nor an async runtime, so
 `default-features = false` leaves a build that pulls in neither:
 
 ```toml
-fingerly = { version = "0.1", default-features = false }
+fingerly = { version = "0.3.0", default-features = false }
 ```
 
 ## Same-origin proxy
@@ -207,7 +227,7 @@ serves through `hyper_util`:
 
 ```toml
 [dependencies]
-fingerly = "0.1"
+fingerly = "0.3.0"
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 ```
@@ -264,17 +284,30 @@ its body read yourself, because `timeout` only starts once `handle` is called.
 
 ### What the proxy does
 
-The browser SDK posts both of its calls to that one path, and the proxy
-forwards each, as a `POST`, to Fingerly's one ingest URL,
+Browser and proxied native client SDKs post a single `v: 3` identification
+envelope to that one path, and the proxy forwards its raw request body bytes
+verbatim as a `POST` to Fingerly's one ingest URL,
 `https://api.fingerly.io/api/v1/ingest` (`api_version` changes the `v1`). Any
-other method gets `405`. Event reads need a secret key and stay unreachable
-from a browser by construction.
+method other than `POST` (plus `OPTIONS` when `allowed_origins` is configured)
+gets `405`, and any subpath (including retired `/supplement` paths) gets `404`.
+Event reads need a secret key and stay unreachable from a browser by
+construction.
 
-The browser must present a public key from the same environment as the proxy
-key, or the request gets `401`. Bodies over 1 MiB get `413`. Only the content type, the visitor
-metadata Fingerly needs, and an `Idempotency-Key` are forwarded; customer
-cookies and authorization headers never are. The proxy reports itself upstream
-as `rust/0.2.0`, which the dashboard shows per proxy.
+The caller must present a public key from the same environment as the proxy
+key, or the request gets `401`. Incoming headers follow the sanitize-and-restore
+sequence: all incoming `x-fingerly-*`, `cookie` and `authorization` headers are
+stripped, restoring `x-fingerly-sdk-platform` only when it matches an exact
+lowercase native or bridge platform (`ios`, `android`, `react-native`,
+`react-native-ios`, `react-native-android`, `flutter`, `flutter-ios`,
+`flutter-android`, `lynx-ios`, `lynx-android`, `capacitor`,
+`kotlin-multiplatform`). When both `Origin` and a validated
+`x-fingerly-sdk-platform` are absent, the request is rejected locally with `400`
+(`missing_origin`), and `x-fingerly-origin` is never synthesized from `Host`,
+`Referer` or the request URL. Bodies over 1 MiB get `413`. Alongside verified
+proxy metadata (`x-fingerly-host` included), only `content-type`, `x-api-key`,
+`user-agent`, `idempotency-key`, `sec-fetch-*` and `sec-ch-ua-*` are forwarded;
+customer cookies and authorization headers never are. The proxy reports itself
+upstream as `rust/0.3.0`, which the dashboard shows per proxy.
 
 Only `Content-Type`, `X-Request-Id`, `RateLimit-Limit`, `RateLimit-Remaining`
 and `Retry-After` are relayed back, plus `Cache-Control: no-store`, so nothing
