@@ -229,12 +229,10 @@ pub struct FingerlyProxy {
 }
 
 struct ProxyInner {
-    /// Server-held proxy key, or deprecated secret key, sent only to Fingerly.
+    /// Server-held proxy key, sent only to Fingerly.
     key: String,
-    /// The key's environment, matched against the browser's key.
+    /// The proxy key's environment, matched against the browser's public key.
     scope: KeyScope,
-    /// Proxy keys authenticate the browser's public key; secret keys do not.
-    uses_proxy_key: bool,
     /// The one URL requests are forwarded to.
     upstream_url: String,
     /// The one path answered, or `None` to answer wherever the router sends.
@@ -469,15 +467,12 @@ impl ProxyInner {
             .and_then(|matched| HeaderValue::from_str(matched).ok())
     }
 
-    /// Decides which key to present upstream.
+    /// Checks the browser's key before anything goes upstream.
     ///
-    /// With a proxy key the browser must supply a public key for the same
-    /// environment, which the proxy forwards alongside its own. The deprecated
-    /// secret-key mode authenticates on its own and accepts anything.
+    /// It must be a public key, `fly_pk_{environment}_…`, for the proxy key's
+    /// environment. The proxy forwards it alongside its own proxy key; any
+    /// other key, a secret key included, is refused.
     fn upstream_key_for(&self, presented: Option<&str>) -> Option<String> {
-        if !self.uses_proxy_key {
-            return Some(self.key.clone());
-        }
         let presented = presented?;
         let browser = parse_key(presented, KeyKind::Public).ok()?;
         (browser == self.scope).then(|| presented.to_owned())
@@ -552,13 +547,11 @@ impl ProxyInner {
             http::header::USER_AGENT,
             HeaderValue::from_static(USER_AGENT),
         );
-        if self.uses_proxy_key {
-            headers.insert(
-                HeaderName::from_static("x-fingerly-proxy-key"),
-                HeaderValue::from_str(&self.key)
-                    .map_err(|_| Error::config("the proxy key is not a valid header value"))?,
-            );
-        }
+        headers.insert(
+            HeaderName::from_static("x-fingerly-proxy-key"),
+            HeaderValue::from_str(&self.key)
+                .map_err(|_| Error::config("the proxy key is not a valid header value"))?,
+        );
         if let Some(idempotency) = non_empty_header(&parts.headers, "idempotency-key") {
             headers.insert(HeaderName::from_static("idempotency-key"), idempotency);
         }
@@ -596,7 +589,6 @@ where
 #[derive(Default)]
 pub struct FingerlyProxyBuilder {
     proxy_key: Option<String>,
-    secret_key: Option<String>,
     api_version: Option<String>,
     upstream: Option<String>,
     allow_insecure_loopback: bool,
@@ -614,7 +606,6 @@ impl fmt::Debug for FingerlyProxyBuilder {
         let redact = |key: &Option<String>| key.as_ref().map(|_| "[redacted]");
         f.debug_struct("FingerlyProxyBuilder")
             .field("proxy_key", &redact(&self.proxy_key))
-            .field("secret_key", &redact(&self.secret_key))
             .field("path", &self.path)
             .field("upstream", &self.upstream)
             .finish_non_exhaustive()
@@ -622,22 +613,12 @@ impl fmt::Debug for FingerlyProxyBuilder {
 }
 
 impl FingerlyProxyBuilder {
-    /// The write-only credential, `fly_px_…`, created for customer-owned proxy
-    /// infrastructure and held only on your server.
+    /// The write-only credential, `fly_px_{environment}_…`, created for
+    /// customer-owned proxy infrastructure and held only on your server.
+    /// Required, and the only credential the proxy takes: a secret read key
+    /// never goes into a proxy.
     pub fn proxy_key(mut self, key: impl Into<String>) -> Self {
         self.proxy_key = Some(key.into());
-        self
-    }
-
-    /// The deprecated alternative to [`FingerlyProxyBuilder::proxy_key`].
-    ///
-    /// Secret read keys will be refused in the next major version. Do not pass
-    /// both.
-    #[deprecated(
-        note = "use proxy_key; secret read keys will be refused in the next major version"
-    )]
-    pub fn secret_key(mut self, key: impl Into<String>) -> Self {
-        self.secret_key = Some(key.into());
         self
     }
 
@@ -748,27 +729,16 @@ impl FingerlyProxyBuilder {
     /// Unlike a request, a proxy is wired up once at start-up, so a bad
     /// credential, path or limit is reported here.
     pub fn build(self) -> Result<FingerlyProxy> {
-        let uses_proxy_key = match (&self.proxy_key, &self.secret_key) {
-            (None, None) => return Err(Error::config("a Fingerly proxy key is required")),
-            (Some(_), Some(_)) => {
-                return Err(Error::config(
-                    "pass proxy_key or the deprecated secret_key, not both",
-                ))
-            }
-            (Some(_), None) => true,
-            (None, Some(_)) => false,
+        let Some(key) = self.proxy_key else {
+            return Err(Error::config(
+                "a Fingerly proxy key (fly_px_{environment}_...) is required",
+            ));
         };
         let Some(client_ip) = self.client_ip else {
             return Err(Error::config("client_ip is required"));
         };
 
-        let key = self.proxy_key.or(self.secret_key).expect("checked above");
-        let kind = if uses_proxy_key {
-            KeyKind::Proxy
-        } else {
-            KeyKind::Secret
-        };
-        let scope = parse_key(&key, kind)?;
+        let scope = parse_key(&key, KeyKind::Proxy)?;
 
         let upstream = normalize_api_origin(
             self.upstream.as_deref().unwrap_or(DEFAULT_ENDPOINT),
@@ -793,7 +763,6 @@ impl FingerlyProxyBuilder {
             inner: Arc::new(ProxyInner {
                 key,
                 scope,
-                uses_proxy_key,
                 upstream_url,
                 path,
                 max_body_bytes,

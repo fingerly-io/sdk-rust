@@ -316,8 +316,15 @@ gets `405`, and any subpath (including retired `/supplement` paths) gets `404`.
 Event reads need a secret key and stay unreachable from a browser by
 construction.
 
-The caller must present a public key from the same environment as the proxy
-key, or the request gets `401`. Incoming headers follow the sanitize-and-restore
+The proxy takes only a proxy key,
+`fly_px_{production|staging|development}_…`; `build()` returns a configuration
+error when it is missing or malformed. The caller's `x-api-key` must be a public
+key, `fly_pk_…`, from the same environment as the proxy key. A missing header, a
+public key of another environment, a secret `fly_sk_` key or any other value is
+answered `401` (`text/plain; charset=utf-8`, `Cache-Control: no-store`) with
+nothing forwarded. Upstream, every request carries the proxy key as
+`x-fingerly-proxy-key` and the browser's public key as `x-api-key`; a secret key
+is never sent. Incoming headers follow the sanitize-and-restore
 sequence: all incoming `x-fingerly-*`, `cookie` and `authorization` headers are
 stripped, restoring `x-fingerly-sdk-platform` only when it matches an exact
 lowercase native or bridge platform (`ios`, `android`, `react-native`,

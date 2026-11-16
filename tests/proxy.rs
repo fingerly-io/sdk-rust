@@ -70,15 +70,87 @@ fn requires_a_credential_and_a_client_ip() {
         .build()
         .unwrap_err();
     assert!(matches!(missing_ip, Error::Config { .. }));
+}
 
-    #[allow(deprecated)]
-    let both = FingerlyProxy::builder()
-        .proxy_key(PROXY_KEY)
-        .secret_key(SECRET_KEY)
+/// Only a well-formed proxy key builds a proxy: a missing one, a secret or
+/// public key, or a malformed proxy key is a configuration error.
+#[test]
+fn build_refuses_anything_but_a_well_formed_proxy_key() {
+    let missing = FingerlyProxy::builder()
         .client_ip(|_| CLIENT_IP.to_owned())
         .build()
         .unwrap_err();
-    assert!(matches!(both, Error::Config { .. }));
+    assert!(matches!(missing, Error::Config { .. }));
+    assert!(missing.to_string().contains("proxy key"), "{missing}");
+
+    for key in [
+        SECRET_KEY,
+        PUBLIC_KEY,
+        "",
+        "fly_px_",
+        "fly_px_production",
+        "fly_px_production_",
+        "fly_px_testing_abc",
+        "fly_px_production_has spaces",
+        "fly_px_production_has/slash",
+        "fly_px_production_has\nnewline",
+        "FLY_PX_production_abc",
+    ] {
+        let error = FingerlyProxy::builder()
+            .proxy_key(key)
+            .client_ip(|_| CLIENT_IP.to_owned())
+            .build()
+            .unwrap_err();
+        assert!(matches!(error, Error::Config { .. }), "{key:?} built");
+        assert!(error.to_string().contains("proxy key"), "{error}");
+    }
+
+    for key in [
+        "fly_px_production_abc",
+        "fly_px_staging_abc-DEF_123",
+        "fly_px_development_abc",
+    ] {
+        FingerlyProxy::builder()
+            .proxy_key(key)
+            .client_ip(|_| CLIENT_IP.to_owned())
+            .build()
+            .unwrap_or_else(|error| panic!("{key} was refused: {error}"));
+    }
+}
+
+/// No request carries a secret key upstream. A browser presenting one is
+/// refused `401` with nothing forwarded, and an accepted request forwards the
+/// browser's public key beside the proxy key.
+#[tokio::test]
+async fn never_sends_a_secret_key_upstream() {
+    let server = TestServer::always(identified()).await;
+
+    let mut request = identify(PATH);
+    request
+        .headers_mut()
+        .insert("x-api-key", SECRET_KEY.parse().unwrap());
+    let response = proxy(&server).handle(request).await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        response.headers()["content-type"],
+        "text/plain; charset=utf-8"
+    );
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    assert_eq!(server.request_count(), 0);
+
+    let response = proxy(&server).handle(identify(PATH)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let forwarded = server.first();
+    assert_eq!(forwarded.header("x-api-key"), PUBLIC_KEY);
+    assert_eq!(forwarded.header("x-fingerly-proxy-key"), PROXY_KEY);
+    for seen in server.requests() {
+        for (name, value) in &seen.headers {
+            assert!(
+                !String::from_utf8_lossy(value.as_bytes()).contains("fly_sk_"),
+                "{name} carried a secret key upstream"
+            );
+        }
+    }
 }
 
 #[test]
@@ -334,31 +406,6 @@ async fn requires_a_matching_public_key_from_the_browser() {
         );
     }
     assert_eq!(server.request_count(), 0);
-}
-
-/// The deprecated mode authenticates on its own, so it accepts whatever the
-/// browser presents and never forwards it.
-#[tokio::test]
-async fn the_deprecated_secret_key_mode_authenticates_on_its_own() {
-    let server = TestServer::always(identified()).await;
-    #[allow(deprecated)]
-    let proxy = FingerlyProxy::builder()
-        .secret_key(SECRET_KEY)
-        .path(PATH)
-        .upstream(&server.base_url)
-        .allow_insecure_loopback(true)
-        .client_ip(|_| CLIENT_IP.to_owned())
-        .build()
-        .unwrap();
-
-    let mut request = identify(PATH);
-    request.headers_mut().remove("x-api-key");
-    let response = proxy.handle(request).await;
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(server.first().path, INGEST);
-    assert_eq!(server.first().header("x-api-key"), SECRET_KEY);
-    assert_eq!(server.first().header("x-fingerly-proxy-key"), "");
 }
 
 #[tokio::test]

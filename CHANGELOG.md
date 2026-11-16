@@ -17,6 +17,8 @@
   forwarding of `Sec-Fetch-*` and `Sec-CH-UA-*` client metadata headers,
   optional cross-origin `allowed_origins` CORS handling, and verbatim raw-byte
   forwarding.
+- `FingerlyProxy` takes only a `proxy_key` and always checks the caller's
+  public key; a secret key is never sent upstream.
 
 ## 0.2.0
 
