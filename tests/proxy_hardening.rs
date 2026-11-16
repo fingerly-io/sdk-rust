@@ -197,3 +197,76 @@ async fn an_upstream_redirect_is_a_502_and_never_followed_by_a_supplied_stack() 
     }
     assert_eq!(target.request_count(), 0, "the redirect was followed");
 }
+
+#[tokio::test]
+async fn only_an_exact_uppercase_post_is_forwarded() {
+    let server = TestServer::always(ok()).await;
+    let proxy = builder(&server.base_url).build().unwrap();
+    for method in ["post", "Post", "GET", "PUT", "OPTIONS"] {
+        let response = proxy
+            .handle(browser(PATH).method(method).body(body()).unwrap())
+            .await;
+        assert_eq!(
+            response.status(),
+            StatusCode::METHOD_NOT_ALLOWED,
+            "{method}"
+        );
+        assert_eq!(response.headers()["cache-control"], "no-store");
+        assert_eq!(response.headers()["allow"], "POST");
+    }
+    assert_eq!(server.request_count(), 0);
+}
+
+#[tokio::test]
+async fn mounted_as_route_and_fallback_every_near_miss_is_the_proxys_own_404() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let upstream = TestServer::always(ok()).await;
+    let service = builder(&upstream.base_url).build().unwrap();
+    let app = axum::Router::new()
+        .route_service(PATH, service.clone())
+        .fallback_service(service);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+
+    let send = |raw: String| async move {
+        let mut socket = tokio::net::TcpStream::connect(address).await.unwrap();
+        socket.write_all(raw.as_bytes()).await.unwrap();
+        let mut answer = Vec::new();
+        let _ = tokio::time::timeout(Duration::from_secs(3), socket.read_to_end(&mut answer)).await;
+        String::from_utf8_lossy(&answer).into_owned()
+    };
+
+    for path in [
+        format!("{PATH}/"),
+        format!("/{PATH}"),
+        format!("{PATH}x"),
+        format!("{PATH}/.."),
+        "/k7x2qm4%61".to_owned(),
+        "/x/../k7x2qm4a".to_owned(),
+    ] {
+        let answer = send(format!(
+            "POST {path} HTTP/1.1\r\nHost: h\r\nOrigin: https://shop.example.com\r\n\
+             X-Api-Key: {PUBLIC_KEY}\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}"
+        ))
+        .await;
+        assert!(answer.starts_with("HTTP/1.1 404"), "{path}: {answer}");
+        assert!(
+            answer
+                .to_ascii_lowercase()
+                .contains("cache-control: no-store"),
+            "{path}: {answer}"
+        );
+    }
+    let answer = send(format!(
+        "GET {PATH} HTTP/1.1\r\nHost: h\r\nConnection: close\r\n\r\n"
+    ))
+    .await;
+    assert!(answer.starts_with("HTTP/1.1 405"), "{answer}");
+    assert!(answer
+        .to_ascii_lowercase()
+        .contains("cache-control: no-store"));
+    assert_eq!(upstream.request_count(), 0);
+}

@@ -211,9 +211,16 @@ impl std::error::Error for ProxyError {}
 ///             .map(|info| info.0.ip().to_string())
 ///             .unwrap_or_default()
 ///     })
+///     .path("/k7x2qm4a")
 ///     .build()?;
 ///
-/// Ok(axum::Router::new().route_service("/k7x2qm4a", proxy))
+/// // The proxy is also the fallback, so a near miss such as `/k7x2qm4a/` is
+/// // answered by the proxy (`404`, `Cache-Control: no-store`) rather than by
+/// // the router. An application with a fallback of its own keeps it and
+/// // mounts only the route.
+/// Ok(axum::Router::new()
+///     .route_service("/k7x2qm4a", proxy.clone())
+///     .fallback_service(proxy))
 /// # }
 /// ```
 #[derive(Clone)]
@@ -653,10 +660,12 @@ impl FingerlyProxyBuilder {
     /// The path the dashboard issued for this proxy, such as `/k7x2qm4a`,
     /// matched exactly. Anything else gets `404`.
     ///
-    /// Leave it unset when the router already sends only that path to the
-    /// service, as `route_service("/k7x2qm4a", proxy)` does. Set it when the
-    /// service sees more than that one path, as a fallback does. Do not set it
-    /// under `nest_service`, which strips the path before the service sees it.
+    /// Set it in every setup where the service sees the original path, so the
+    /// proxy itself refuses anything else, uncacheable. It is required when
+    /// the service is a fallback. Without it, whatever the router sends is
+    /// answered, and near misses the router turns away are answered by the
+    /// router, without `Cache-Control: no-store`. Do not set it under
+    /// `nest_service`, which strips the path before the service sees it.
     pub fn path(mut self, path: impl Into<String>) -> Self {
         self.path = Some(path.into());
         self

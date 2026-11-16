@@ -253,9 +253,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|ConnectInfo(peer)| peer.ip().to_string())
                 .unwrap_or_default()
         })
+        .path("/k7x2qm4a")
         .build()?;
 
-    let app = axum::Router::new().route_service("/k7x2qm4a", proxy);
+    // The proxy is the fallback too, so near misses such as `/k7x2qm4a/` get
+    // the proxy's own uncacheable 404 instead of the router's.
+    let app = axum::Router::new()
+        .route_service("/k7x2qm4a", proxy.clone())
+        .fallback_service(proxy);
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
     // ConnectInfo is only there when the app is served with it.
     axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await?;
@@ -338,21 +343,14 @@ let proxy = FingerlyProxy::builder()
     .build()?;
 ```
 
-`path` is optional. Leave it unset when the router already sends only the
-issued path to the service, as `route_service` does. Set it when the service
-sees more than that, as a fallback does, and the proxy answers only that path,
-exactly: a trailing or doubled slash, a dot segment, an encoded character, a
-different case or a path under it all get `404`:
-
-```rust
-let proxy = FingerlyProxy::builder()
-    .proxy_key(std::env::var("FINGERLY_PROXY_KEY")?)
-    .path("/k7x2qm4a")
-    // ...
-    .build()?;
-
-let app = axum::Router::new().fallback_service(proxy);
-```
+Set `path` wherever the service sees the original path. The proxy then answers
+only that path, exactly: a trailing or doubled slash, a dot segment, an encoded
+character, a different case or a path under it all get `404` with
+`Cache-Control: no-store`, and only an exact uppercase `POST` is forwarded.
+Mounted as the fallback as well, as above, the proxy gives that answer for
+every near miss. An application with a fallback of its own keeps it, mounts
+only the route, and the router answers paths next to it. Without `path`, the
+proxy answers whatever the router sends it.
 
 Do not set it under `nest_service` or any other router that strips the mount
 before the service sees it: the path would never match.
