@@ -796,6 +796,41 @@
         ],
         "type": "object"
       },
+      "PrivateAccessTokenIssuerIn": {
+        "properties": {
+          "directory_url": {
+            "description": "Instead of token_key: the issuer's HTTPS directory, read for its current type 2 keys",
+            "type": "string"
+          },
+          "issuer_name": {
+            "description": "The issuer's server name, host and optional port. Defaults to the directory URL's host",
+            "type": "string"
+          },
+          "token_key": {
+            "description": "The issuer's token type 2 key, base64url: a DER SubjectPublicKeyInfo of a 2048-bit RSASSA-PSS key with SHA-384",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PrivateAccessTokenIssuerOut": {
+        "properties": {
+          "directory_url": {
+            "type": "string"
+          },
+          "issuer_name": {
+            "type": "string"
+          },
+          "token_key": {
+            "description": "base64url, padded",
+            "type": "string"
+          }
+        },
+        "required": [
+          "issuer_name"
+        ],
+        "type": "object"
+      },
       "ProjectArchivedOut": {
         "properties": {
           "archived": {
@@ -1374,6 +1409,21 @@
             "description": "The human-readable stem, such as fly_pk_production",
             "type": "string"
           },
+          "private_access_token_issuer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PrivateAccessTokenIssuerOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Prototype: the project's token issuer, on the answer to an origins update"
+          },
+          "private_access_tokens": {
+            "description": "Prototype: whether a capable Safari is asked for a Private Access Token when the page requests a web ticket",
+            "type": "boolean"
+          },
           "project_id": {
             "type": "string"
           },
@@ -1414,6 +1464,7 @@
           "last4",
           "name",
           "prefix",
+          "private_access_tokens",
           "project_id",
           "require_attestation",
           "status",
@@ -6000,6 +6051,24 @@
                       "type": "string"
                     },
                     "type": "array"
+                  },
+                  "private_access_token_issuer": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/PrivateAccessTokenIssuerIn"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Prototype: the token issuer of the key's whole project. Leave out to keep it; send an empty object to clear it"
+                  },
+                  "private_access_tokens": {
+                    "description": "Prototype: ask Safari on iOS 16+ and macOS 13+ for a Private Access Token when the page requests a web ticket. Needs a public key in a project that names a token issuer. Leave out to keep the current setting",
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
                   },
                   "web_ticket_pow_bits": {
                     "description": "Proof of work the key's web freshness tickets ask for, 0 (off) to 22 leading zero bits. Leave out to keep the current setting",
