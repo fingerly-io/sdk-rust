@@ -19,8 +19,9 @@
   `Event::is_identifiable()`, `Event::parse_document()`, `EventDocument`,
   `Attestation`, and the `signals` module covering all v3 signal identifiers
   (`ATTESTATION_FAILED`, `ATTESTATION_DOWNGRADE`, `DEVICE_INCONSISTENT`,
-  `REPORT_INCOMPLETE`, `PROBE_ERRORS`, `FETCH_METADATA_MISSING`, `TAMPERING`,
-  `CUSTOM_ROOT_CA`, `SECONDARY_USER_PROFILE`), with `attest_skipped` and
+  `REPORT_INCOMPLETE`, `PROBE_ERRORS`, `FETCH_METADATA_MISSING`,
+  `WEB_TICKET_MISSING`, `WEB_TICKET_INVALID`, `TAMPERING`, `CUSTOM_ROOT_CA`,
+  `SECONDARY_USER_PROFILE`), with `attest_skipped` and
   `downgrade` on `Attestation`.
 - Updated `FingerlyProxy` to enforce the single-path `proxy.md` relay contract:
   sanitize-and-restore validation of `x-fingerly-sdk-platform`, rejection with

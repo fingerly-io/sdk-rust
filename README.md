@@ -147,6 +147,8 @@ including `signals::ATTESTATION_FAILED` (`"attestation_failed"`),
 `signals::REPORT_INCOMPLETE` (`"report_incomplete"`),
 `signals::PROBE_ERRORS` (`"probe_errors"`),
 `signals::FETCH_METADATA_MISSING` (`"fetch_metadata_missing"`),
+`signals::WEB_TICKET_MISSING` (`"web_ticket_missing"`),
+`signals::WEB_TICKET_INVALID` (`"web_ticket_invalid"`),
 `signals::TAMPERING` (`"tampering"`),
 `signals::CUSTOM_ROOT_CA` (`"custom_root_ca"`) and
 `signals::SECONDARY_USER_PROFILE` (`"secondary_user_profile"`). A native

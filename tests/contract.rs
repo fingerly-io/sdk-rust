@@ -330,6 +330,8 @@ async fn v3_openapi_and_models_match_single_path_contract() {
     assert_eq!(signals::ATTESTATION_DOWNGRADE, "attestation_downgrade");
     assert_eq!(signals::PROBE_ERRORS, "probe_errors");
     assert_eq!(signals::FETCH_METADATA_MISSING, "fetch_metadata_missing");
+    assert_eq!(signals::WEB_TICKET_MISSING, "web_ticket_missing");
+    assert_eq!(signals::WEB_TICKET_INVALID, "web_ticket_invalid");
     let payload = serde_json::json!({
         "request_id": "req_v3_unidentifiable",
         "visitor_id": "",

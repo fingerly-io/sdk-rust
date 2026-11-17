@@ -58,6 +58,11 @@ pub mod signals {
     pub const BOT: &str = "bot";
     /// Browser report with no `Sec-Fetch-*` headers from a browser that always sends them.
     pub const FETCH_METADATA_MISSING: &str = "fetch_metadata_missing";
+    /// Browser report that carried no single-use freshness ticket.
+    pub const WEB_TICKET_MISSING: &str = "web_ticket_missing";
+    /// Browser report whose freshness ticket did not verify: bad signature,
+    /// another key's or origin's, expired, or already used.
+    pub const WEB_TICKET_INVALID: &str = "web_ticket_invalid";
     /// Abnormal request velocity from one device or network.
     pub const HIGH_ACTIVITY: &str = "high_activity";
     /// Private or incognito browsing mode.
