@@ -7,115 +7,36 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Canonical v3 signal-group and detector identifiers reported on events and
-/// archived risk assessments.
-pub mod signals {
-    /// Tor exit node network provenance.
-    pub const TOR: &str = "tor";
-    /// Datacenter proxy network provenance.
-    pub const DATACENTER_PROXY: &str = "datacenter_proxy";
-    /// Residential proxy network provenance.
-    pub const RESIDENTIAL_PROXY: &str = "residential_proxy";
-    /// VPN network provenance.
-    pub const VPN: &str = "vpn";
-    /// Public spam or attack blocklist match.
-    pub const IP_BLOCKLIST: &str = "ip_blocklist";
-    /// Recent IP abuse reputation match.
-    pub const IP_REPUTATION: &str = "ip_reputation";
-    /// Bogon or anycast network anomaly.
-    pub const NETWORK_ANOMALY: &str = "network_anomaly";
-    /// Device locale or timezone mismatch against network geography.
-    pub const LOCATION_SPOOFING: &str = "location_spoofing";
-    /// Xcode iOS simulator runtime.
-    pub const IOS_SIMULATOR: &str = "ios_simulator";
-    /// Android emulator runtime.
-    pub const ANDROID_EMULATOR: &str = "android_emulator";
-    /// Browser inside a virtual machine.
-    pub const VIRTUAL_MACHINE: &str = "virtual_machine";
-    /// Jailbroken iOS device.
-    pub const JAILBROKEN_DEVICE: &str = "jailbroken_device";
-    /// Rooted Android device.
-    pub const ROOTED_DEVICE: &str = "rooted_device";
-    /// App running inside a cloning framework.
-    pub const CLONED_APP: &str = "cloned_app";
-    /// Mass-provisioned or reset-fresh device farm indicators.
-    pub const DEVICE_FARM: &str = "device_farm";
-    /// Untrusted or intercepting TLS chain.
-    pub const MITM_ATTACK: &str = "mitm_attack";
-    /// Frida dynamic instrumentation toolkit detected.
-    pub const FRIDA_DETECTED: &str = "frida_detected";
-    /// Edited browser runtime or engine contradiction (group).
-    pub const BROWSER_TAMPERING: &str = "browser_tampering";
-    /// Edited client runtime or patched native bindings (detector).
-    pub const TAMPERING: &str = "tampering";
-    /// Report suppressed below minimum identifiability traits.
-    pub const FINGERPRINT_SUPPRESSED: &str = "fingerprint_suppressed";
-    /// Open inspector or attached debugger.
-    pub const DEVELOPER_TOOLS: &str = "developer_tools";
-    /// Session driven over remote desktop software.
-    pub const REMOTE_CONTROL: &str = "remote_control";
-    /// Automated script, headless agent, or declared bot.
-    pub const BOT: &str = "bot";
-    /// Browser report with no `Sec-Fetch-*` headers from a browser that always sends them.
-    pub const FETCH_METADATA_MISSING: &str = "fetch_metadata_missing";
-    /// Browser report that carried no single-use freshness ticket.
-    pub const WEB_TICKET_MISSING: &str = "web_ticket_missing";
-    /// Browser report whose freshness ticket did not verify: bad signature,
-    /// another key's or origin's, expired, or already used.
-    pub const WEB_TICKET_INVALID: &str = "web_ticket_invalid";
-    /// Abnormal request velocity from one device or network.
-    pub const HIGH_ACTIVITY: &str = "high_activity";
-    /// Private or incognito browsing mode.
-    pub const INCOGNITO_MODE: &str = "incognito_mode";
-    /// Hardened browser privacy posture.
-    pub const PRIVACY_SETTINGS: &str = "privacy_settings";
-    /// Page running inside an embedded in-app WebView.
-    pub const EMBEDDED_WEB_VIEW: &str = "embedded_web_view";
-    /// Active voice call during submission.
-    pub const ACTIVE_CALL: &str = "active_call";
-    /// Native device capable of hardware attestation presented none.
-    pub const ATTESTATION_MISSING: &str = "attestation_missing";
-    /// Hardware attestation failed cryptographic, chain, replay, or install checks.
-    pub const ATTESTATION_FAILED: &str = "attestation_failed";
-    /// Unproven or rejected native report naming an install an attested key owns.
-    pub const ATTESTATION_DOWNGRADE: &str = "attestation_downgrade";
-    /// Hardware, OS, capability, or worker-realm cross-signal contradiction.
-    pub const DEVICE_INCONSISTENT: &str = "device_inconsistent";
-    /// Evidence a report always carries is missing: a required native security
-    /// source, or the web worker-realm cross-check.
-    pub const REPORT_INCOMPLETE: &str = "report_incomplete";
-    /// Native security source that ran but lists probes that threw, were denied or timed out.
-    pub const PROBE_ERRORS: &str = "probe_errors";
-    /// Non-WebPKI system-trusted root CA without MITM interceptor markers.
-    pub const CUSTOM_ROOT_CA: &str = "custom_root_ca";
-    /// Managed Android work profile or secondary OS user profile.
-    pub const SECONDARY_USER_PROFILE: &str = "secondary_user_profile";
-}
+use crate::enums::{
+    AnonymityNetwork, AttestSkippedReason, AttestationState, AttestationStatus, Confidence,
+    Environment, EventState, RiskPlatform, RiskSource, Signal, SuspectLevel,
+};
 
 /// One signal group that contributed to an event's suspect score.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[non_exhaustive]
 pub struct EventTrigger {
-    /// The signal group, such as `vpn`, `bot`, or `attestation_failed`.
-    pub signal: String,
+    /// The signal group, such as [`Signal::Vpn`], [`Signal::Bot`] or
+    /// [`Signal::AttestationFailed`].
+    pub signal: Signal,
     /// The group's combined weight in this score.
     pub weight: i32,
-    /// `low`, `medium` or `high`.
+    /// How sure the detection is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub confidence: Option<String>,
+    pub confidence: Option<Confidence>,
 }
 
 /// Platform-neutral hardware attestation verdict inside an archived document.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[non_exhaustive]
 pub struct Attestation {
-    /// `attested`, `not_attested` or `failed`.
-    pub state: String,
+    /// The verdict on the hardware evidence.
+    pub state: AttestationState,
     /// Native platform (`ios` or `android`) when recorded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub platform: Option<String>,
-    /// `verified`, `indeterminate`, `invalid`, `absent` or `unconfigured`.
-    pub status: String,
+    /// The detail behind [`Attestation::state`].
+    pub status: AttestationStatus,
     /// Short stable reason token when attestation failed or was skipped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
@@ -149,7 +70,7 @@ pub struct Attestation {
     /// The app's own reason for sending no attestation (such as `not_offered`,
     /// `unsupported` or `timeout`). Diagnostic only; it never lowers the score.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub attest_skipped: Option<String>,
+    pub attest_skipped: Option<AttestSkippedReason>,
     /// Whether an unproven or rejected report named an install an attested
     /// device owns, so it was answered unidentifiable.
     #[serde(default)]
@@ -196,13 +117,14 @@ pub struct EventDocumentSdk {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[non_exhaustive]
 pub struct EventRiskTrigger {
-    /// Detector identifier, such as `attestation_failed` or `device_inconsistent`.
-    pub signal: String,
+    /// The raw detector, such as [`Signal::VpnPublic`] or
+    /// [`Signal::DeviceInconsistent`].
+    pub signal: Signal,
     /// Weight applied under the active risk profile.
     pub weight: i32,
-    /// Detector confidence (`low`, `medium` or `high`).
+    /// Detector confidence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub confidence: Option<String>,
+    pub confidence: Option<Confidence>,
     /// Short stable explanation token for this detector.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
@@ -212,16 +134,16 @@ pub struct EventRiskTrigger {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[non_exhaustive]
 pub struct EventRiskReport {
-    /// Risk scoring platform (`web`, `ios` or `android`).
-    pub platform: String,
+    /// Risk scoring platform.
+    pub platform: RiskPlatform,
     /// Weighted sum of triggered signals.
     pub score: i32,
-    /// Banded risk level (`low`, `medium` or `high`).
-    pub level: String,
+    /// Banded risk level.
+    pub level: SuspectLevel,
     /// Suspect threshold active when scored.
     pub threshold: i32,
-    /// Profile source (`key`, `organization` or `default`).
-    pub source: String,
+    /// Which risk profile scored the submission.
+    pub source: RiskSource,
     /// Stored profile revision when applicable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub revision: Option<i64>,
@@ -283,21 +205,23 @@ pub struct Event {
     /// reads as `""`, which `EventsClient::verify` refuses as too old.
     #[serde(default)]
     pub occurred_at: String,
-    /// `enriched`, or `unavailable` when the network lookup could not run.
-    pub state: String,
+    /// [`EventState::Enriched`], or [`EventState::Unavailable`] when the
+    /// network lookup could not run.
+    pub state: EventState,
     /// Why enrichment did not happen, on an `unavailable` event.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
 
     /// The deployment the event was recorded in.
-    pub environment: String,
+    pub environment: Environment,
     /// The Fingerly project the event belongs to, as a UUID string. `None`
     /// when the server predates projects.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_id: Option<String>,
     /// The scoring profile applied. It differs from [`Event::sdk_platform`]:
-    /// `react-native-ios` reports itself as such and is scored as `ios`.
-    pub platform: String,
+    /// `react-native-ios` reports itself as such and is scored as
+    /// [`RiskPlatform::Ios`].
+    pub platform: RiskPlatform,
     /// What the SDK called itself.
     pub sdk_platform: String,
     /// The SDK build that submitted the identification.
@@ -332,10 +256,10 @@ pub struct Event {
     /// That network's name, such as a carrier or a hosting provider.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asn_name: Option<String>,
-    /// `tor`, `vpn`, `proxy` or `hosting`. `None` on an ordinary consumer
-    /// connection, which is most of them.
+    /// The kind of network that hid the address. `None` on an ordinary
+    /// consumer connection, which is most of them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub anonymity_network: Option<String>,
+    pub anonymity_network: Option<AnonymityNetwork>,
 
     /// The browser or app family, such as `chrome`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -356,9 +280,9 @@ pub struct Event {
     /// `None` when the request was not scored. Never read `None` as 0.
     #[serde(default)]
     pub suspect_score: Option<i32>,
-    /// `low`, `medium` or `high`. `None` when not scored.
+    /// The band the score falls into. `None` when not scored.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub suspect_level: Option<String>,
+    pub suspect_level: Option<SuspectLevel>,
 
     /// Never `None` from the API: an event about which nothing fired carries
     /// an empty list.
@@ -457,35 +381,4 @@ pub struct EventPage {
     /// The response body exactly as it arrived.
     #[serde(skip)]
     pub raw: serde_json::Value,
-}
-
-/// A suspect level, for filtering a listing.
-///
-/// Reading an event gives back [`Event::suspect_level`] as a string, because
-/// the API may name a level this build has never heard of.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SuspectLevel {
-    /// Nothing worth acting on fired.
-    Low,
-    /// Enough fired to be worth a second factor.
-    Medium,
-    /// Treat the visitor as suspect.
-    High,
-}
-
-impl SuspectLevel {
-    /// The wire value the API filters on.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            SuspectLevel::Low => "low",
-            SuspectLevel::Medium => "medium",
-            SuspectLevel::High => "high",
-        }
-    }
-}
-
-impl std::fmt::Display for SuspectLevel {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
 }

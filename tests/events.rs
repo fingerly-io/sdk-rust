@@ -24,7 +24,7 @@ async fn reads_one_event() {
     assert_eq!(event.visitor_id, "vis_1");
     assert_eq!(event.score(), Some(12));
     assert!(event.is_scored());
-    assert_eq!(event.suspect_level.as_deref(), Some("low"));
+    assert_eq!(event.suspect_level, Some(SuspectLevel::Low));
 }
 
 /// A request id is part of a URL path, so it is escaped rather than trusted to

@@ -7,6 +7,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use hmac::{Hmac, Mac};
 use serde::Deserialize;
+
+use crate::enums::{WebhookEnvironment, WebhookEventType};
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
 
@@ -31,18 +33,19 @@ pub struct WebhookEvent {
     /// Identifies this delivery. Persist it to deduplicate: a webhook may
     /// arrive more than once.
     pub id: String,
-    /// The event name, such as `identification.completed`.
+    /// The event name, such as [`WebhookEventType::IdentificationCompleted`].
     #[serde(rename = "type")]
-    pub event_type: String,
+    pub event_type: WebhookEventType,
     /// The envelope version.
     #[serde(default)]
     pub version: i64,
     /// The organisation the event belongs to.
     #[serde(default)]
     pub organization_id: String,
-    /// The deployment the event came from.
+    /// [`WebhookEnvironment::Live`] for production keys and
+    /// [`WebhookEnvironment::Test`] for every other environment.
     #[serde(default)]
-    pub environment: String,
+    pub environment: WebhookEnvironment,
     /// When Fingerly recorded the event, as RFC 3339.
     #[serde(default)]
     pub created_at: String,
