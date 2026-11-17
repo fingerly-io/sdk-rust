@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.4.0
+
+- Breaking: every closed set the API reports is an enum with an
+  `Other(String)` variant that keeps a value this build does not know, so a
+  value the server adds later still deserializes: `Signal` (every signal group
+  and raw detector, including `VpnPublic`, `Proxy`, `RepeatedReinstall`,
+  `DeviceActivityHigh` and the rest), `SuspectLevel`, `Confidence`,
+  `AttestationState`, `AttestationStatus`, `AttestSkippedReason`,
+  `EventState`, `AnonymityNetwork` (including `Relay`), `Environment`,
+  `RiskPlatform`, `RiskSource`, `WebhookEventType` and `WebhookEnvironment`.
+  Each has `as_str()`, `is_known()`, `KNOWN`, `From<&str>`, `From<String>`,
+  `Display` and equality with `str`. The matching fields on `Event`,
+  `EventTrigger`, `EventRiskTrigger`, `EventRiskReport`, `Attestation` and
+  `WebhookEvent` now have those types, and the `signals` module of string
+  constants is removed in favour of `Signal`.
+- Breaking: `SuspectLevel` is no longer `Copy`, and `as_str()` borrows.
+- Breaking: `Verification::reason` is a `VerifyReason` rather than an
+  `Option`, with `VerifyReason::Ok` (wire value `""`) when every check passed.
+- `Signal` matches the server's signal list, including `repeated_reinstall`,
+  `device_activity_high` and `device_activity_very_high`, and
+  `AnonymityNetwork` documents `relay`.
+
 ## 0.3.0
 
 - Added `events().verify(request_id, VerifyOptions)`, which reads an event and
