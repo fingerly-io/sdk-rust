@@ -1,23 +1,83 @@
-# fingerly
+<p align="center">
+  <a href="https://fingerly.io">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/fingerly-io/.github/main/assets/logo-dark.svg">
+      <img src="https://raw.githubusercontent.com/fingerly-io/.github/main/assets/logo-light.svg" alt="Fingerly" height="44">
+    </picture>
+  </a>
+</p>
 
-Server-side event reads, webhook verification and a same-origin proxy for Rust.
-Rust 1.88 or newer, async on Tokio.
+<p align="center"><b>Fingerly for Rust</b><br>Read device intelligence events, verify webhooks and serve the browser SDK from your own domain.</p>
 
-```sh
-cargo add fingerly@0.3.0
-```
+<p align="center">
+  <a href="https://crates.io/crates/fingerly"><img src="https://img.shields.io/crates/v/fingerly?style=flat-square" alt="crates.io version"></a>
+  <a href="https://github.com/fingerly-io/sdk-rust/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/fingerly-io/sdk-rust/ci.yml?style=flat-square&label=ci" alt="CI status"></a>
+  <a href="https://github.com/fingerly-io/sdk-rust/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License: Apache-2.0"></a>
+  <img src="https://img.shields.io/badge/rust-1.88%2B-orange?style=flat-square" alt="Rust 1.88 or newer">
+  <a href="https://docs.fingerly.io/docs/sdks/rust"><img src="https://img.shields.io/badge/docs-docs.fingerly.io-111827?style=flat-square" alt="Documentation"></a>
+</p>
 
-```rust
-use fingerly::{EventListParams, Fingerly, SuspectLevel};
+<p align="center"><img src="https://raw.githubusercontent.com/fingerly-io/.github/main/assets/banner.webp" alt="Fingerly" width="100%"></p>
 
-let fingerly = Fingerly::new(std::env::var("FINGERLY_SECRET_KEY")?)?;
+## What is this
 
-let event = fingerly.events().get(&request_id).await?;
-let page = fingerly
-    .events()
-    .list(EventListParams::new().level(SuspectLevel::High).limit(50))
-    .await?;
-```
+The `fingerly` crate is the server-side SDK for Rust, async on Tokio. It reads
+Fingerly events with a secret key, verifies webhook signatures and relays the
+browser SDK's traffic through your own domain with a same-origin proxy. It is
+for backends that protect signups, logins and payments from fraud and abuse.
+[Fingerly](https://fingerly.io) identifies the device behind each session and
+scores how suspicious it is.
+
+## Getting started
+
+1. **Prerequisites.** A Fingerly account and a secret key (`fly_sk_...`). See
+   [API keys and environments](https://docs.fingerly.io/docs/api-keys). Rust
+   1.88 or newer.
+2. **Install.**
+
+   ```sh
+   cargo add fingerly
+   ```
+
+3. **Read an event.**
+
+   ```rust
+   use fingerly::{EventListParams, Fingerly, SuspectLevel};
+
+   let fingerly = Fingerly::new(std::env::var("FINGERLY_SECRET_KEY")?)?;
+
+   let event = fingerly.events().get(&request_id).await?;
+   let page = fingerly
+       .events()
+       .list(EventListParams::new().level(SuspectLevel::High).limit(50))
+       .await?;
+   ```
+
+4. **Verify a webhook.**
+
+   ```rust
+   let ok = fingerly::verify_webhook(
+       &std::env::var("FINGERLY_WEBHOOK_SECRET")?,
+       &body,
+       headers.get("x-fingerly-timestamp").and_then(|v| v.to_str().ok()),
+       headers.get("x-fingerly-signature").and_then(|v| v.to_str().ok()),
+   );
+   ```
+
+Full guide: [docs.fingerly.io/docs/sdks/rust](https://docs.fingerly.io/docs/sdks/rust).
+
+## Choose what you need
+
+| I want to | Use | Read |
+| --- | --- | --- |
+| Read an event after the browser identified a visitor | `Fingerly` and `events().get` / `list` | [Read events](#read-events) |
+| Check a webhook delivery is genuine | `verify_webhook` and `WebhookVerifier` | [Verify webhooks](#verify-webhooks) |
+| Read or set an iOS device's two DeviceCheck bits | `device_check().query` / `write` | [DeviceCheck bits on iOS](#devicecheck-bits-on-ios) |
+| Keep the browser SDK first-party, away from content blockers | `FingerlyProxy`, a `tower::Service` | [First-party proxy](#first-party-proxy-same-origin) |
+
+On this page: [Read events](#read-events) · [DeviceCheck bits on iOS](#devicecheck-bits-on-ios) · [Verify webhooks](#verify-webhooks) · [First-party proxy](#first-party-proxy-same-origin) · [Features](#features) · [Requirements](#requirements) · [Development](#development-and-release-preparation) · [Documentation](#documentation) · [Help](#help) · [Licence](#licence)
+
+## Read events
 
 Event reads require `fly_sk_{production|staging|development}_…` keys. Requests
 go to `https://api.fingerly.io`; `endpoint` on the builder overrides that for a
@@ -47,7 +107,7 @@ hundreds of requests reuses connections instead of opening one per request.
 There is nothing to tune for a busy server. `Debug` output of every SDK value
 shows keys and secrets as `[redacted]`.
 
-## Deadlines and cancellation
+### Deadlines and cancellation
 
 Every request carries a deadline that covers reading the response body, so a
 server that answers and then stalls times out like one that never answered. It
@@ -56,7 +116,7 @@ defaults to 5 seconds and is set with `.timeout(…)` on the builder.
 Cancellation is ordinary Rust cancellation: drop the future and the request
 stops. There is no separate cancellation token to thread through.
 
-## Errors
+### Errors
 
 Every call returns `fingerly::Result<T>`, whose error is one `Error` enum:
 
@@ -95,15 +155,12 @@ match fingerly.events().get(&request_id).await {
 A `404` from `get` carries one of two codes, each with a predicate, so
 neither needs a status-and-code check:
 
-- `error.is_event_pending()` (`ApiError::is_pending()`): the request id was
-  accepted but its event is not recorded yet. It is not a verdict. Try again
-  after `error.retry_after()` seconds, or verify asynchronously, for example
-  from a webhook. The SDK never retries on its own.
-- `error.is_event_not_found()` (`ApiError::is_not_found()`): the request id was
-  never issued for this key's environment, or the event is past the 30-day
-  retention.
+| Predicate | Meaning |
+| --- | --- |
+| `error.is_event_pending()` (`ApiError::is_pending()`) | The request id was accepted but its event is not recorded yet. It is not a verdict. Try again after `error.retry_after()` seconds, or verify asynchronously, for example from a webhook. The SDK never retries on its own. |
+| `error.is_event_not_found()` (`ApiError::is_not_found()`) | The request id was never issued for this key's environment, or the event is past the 30-day retention. |
 
-## Unscored events
+### Unscored events
 
 `Event::suspect_score` is an `Option<i32>` because `None` means unscored, which
 must never be read as zero: a visitor about whom nothing fired scores 0, while
@@ -120,7 +177,7 @@ let Some(score) = event.score() else {
 `Event::raw` and `EventPage::raw` keep the response body exactly as it arrived,
 so a field the API adds later is reachable without an SDK upgrade.
 
-## Read an event you just identified
+### Read an event you just identified
 
 ```rust
 let event = fingerly.events().get(&request_id).await?;
@@ -158,7 +215,7 @@ proof) and `downgrade` (the report named an install an attested device owns).
 `Event::project_id` names the Fingerly project the event belongs to, as a UUID
 string. It is `None` when the server is older than projects.
 
-## Verify a backend action
+### Verify a backend action
 
 Verify the event with a server-only key, then apply your own policy to the
 server's verdict. Do not authorize an action using scores or visitor
@@ -312,40 +369,32 @@ retried. Each answer has a predicate on `Error`:
 Never rely on the bits as the only fraud check, and give customers a way to
 have them reset, which is a write of `false` at their next identification.
 
-## Webhooks
+## Verify webhooks
 
-```rust
-let ok = fingerly::verify_webhook(
-    &std::env::var("FINGERLY_WEBHOOK_SECRET")?,
-    &body,
-    headers.get("x-fingerly-timestamp").and_then(|v| v.to_str().ok()),
-    headers.get("x-fingerly-signature").and_then(|v| v.to_str().ok()),
-);
-```
+The call is in [Getting started](#getting-started). Verify the exact raw bytes
+before decoding them: re-serialising them changes the digest.
 
-Verify the exact raw bytes before decoding them: re-serialising them changes
-the digest. Signatures cover the timestamp and body. The default replay
-tolerance is five minutes, changed with `WebhookVerifier::new(secret)
-.tolerance(…)`. During a signing-secret rotation, any matching signature
-among the first 32 in the comma-separated header is accepted. Malformed or missing input is a `false`
-result, never a panic.
+| Behaviour | Detail |
+| --- | --- |
+| What a signature covers | the timestamp and the body |
+| Replay tolerance | five minutes by default, changed with `WebhookVerifier::new(secret).tolerance(…)` |
+| Secret rotation | any matching signature among the first 32 in the comma-separated header is accepted |
+| Malformed or missing input | a `false` result, never a panic |
+| Deduplication | verification proves authenticity and freshness only; persist processed `WebhookEvent::id` values as well |
 
-Verification proves authenticity and freshness. It does not deduplicate, so
-persist processed `WebhookEvent::id` values as well. `WebhookEvent` decodes the
-envelope every delivery shares and leaves `data` raw, so a new event type needs
-no SDK upgrade.
-`identification.completed` and `visitor.suspect` carry `data.project_id`;
-`identification.refused` carries it only when the refused request named a known
-key.
+`WebhookEvent` decodes the envelope every delivery shares and leaves `data`
+raw, so a new event type needs no SDK upgrade. `identification.completed` and
+`visitor.suspect` carry `data.project_id`; `identification.refused` carries it
+only when the refused request named a known key.
 
 Webhook verification needs neither an HTTP stack nor an async runtime, so
 `default-features = false` leaves a build that pulls in neither:
 
 ```toml
-fingerly = { version = "0.3.0", default-features = false }
+fingerly = { version = "0.3", default-features = false }
 ```
 
-## Same-origin proxy
+## First-party proxy (same-origin)
 
 Content blockers refuse browser requests to third-party APIs, and a refused
 identification is a visitor never identified. Mount the proxy on a path of your
@@ -360,7 +409,7 @@ serves through `hyper_util`:
 
 ```toml
 [dependencies]
-fingerly = "0.3.0"
+fingerly = "0.3"
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 ```
@@ -404,6 +453,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 Trust that header only when traffic can reach the server through that load
 balancer or CDN alone; otherwise a visitor can set it.
 
+> **`client_ip` is the one thing you must get right.** Resolve it from a header
+> your own infrastructure sets, such as your load balancer's or CDN's, and fall
+> back to the TCP peer. Never read the left-most `X-Forwarded-For` value: the
+> visitor writes it. The callback receives the request's `Parts`, so a
+> framework extension such as axum's `ConnectInfo` is reachable from inside
+> it. It must return exactly one IPv4 or IPv6 address. Anything else (empty, a
+> list, a port) is a configuration error: the proxy answers `500` with "The
+> client IP callback returned no valid address", calls nothing upstream, and
+> reports it once.
+
 Then point the browser SDK at the same path:
 
 ```ts
@@ -422,55 +481,30 @@ its body read yourself, because `timeout` only starts once `handle` is called.
 
 ### What the proxy does
 
-Browser and proxied native client SDKs post a single `v: 3` identification
-envelope to that one path, and the proxy forwards its raw request body bytes
-verbatim as a `POST` to Fingerly's one ingest URL,
-`https://api.fingerly.io/api/v1/ingest` (`api_version` changes the `v1`). Any
-method other than `POST` (plus `OPTIONS` when `allowed_origins` is configured)
-gets `405`, and any subpath (including retired `/supplement` paths) gets `404`.
-Event reads need a secret key and stay unreachable from a browser by
-construction.
-
-The proxy takes only a proxy key,
-`fly_px_{production|staging|development}_…`; `build()` returns a configuration
-error when it is missing or malformed. The caller's `x-api-key` must be a public
-key, `fly_pk_…`, from the same environment as the proxy key. A missing header, a
-public key of another environment, a secret `fly_sk_` key or any other value is
-answered `401` (`text/plain; charset=utf-8`, `Cache-Control: no-store`) with
-nothing forwarded. Upstream, every request carries the proxy key as
-`x-fingerly-proxy-key` and the browser's public key as `x-api-key`; a secret key
-is never sent. Incoming headers follow the sanitize-and-restore
-sequence: all incoming `x-fingerly-*`, `cookie` and `authorization` headers are
-stripped, restoring `x-fingerly-sdk-platform` only when it matches an exact
-lowercase native or bridge platform (`ios`, `android`, `react-native`,
-`react-native-ios`, `react-native-android`, `flutter`, `flutter-ios`,
-`flutter-android`, `lynx-ios`, `lynx-android`, `capacitor`,
-`kotlin-multiplatform`). A request carries one channel upstream: when `Origin`
-is present it is sent as `x-fingerly-origin` and the platform header is not
-sent, as on a direct call to the API. When both `Origin` and a validated
-`x-fingerly-sdk-platform` are absent, the request is rejected locally with `400`
-(`missing_origin`), and `x-fingerly-origin` is never synthesized from `Host`,
-`Referer` or the request URL. Bodies over 1 MiB get `413`. Alongside verified
-proxy metadata (`x-fingerly-host` included), only `content-type`, `x-api-key`,
-`user-agent`, `idempotency-key`, `sec-fetch-*` and `sec-ch-ua-*` are forwarded;
-customer cookies and authorization headers never are. The proxy reports itself
-upstream as `rust/0.3.0`, which the dashboard shows per proxy.
-
-Only `Content-Type`, `X-Request-Id`, `RateLimit-Limit`, `RateLimit-Remaining`
-and `Retry-After` are relayed back, plus `Cache-Control: no-store`, so nothing
-on the response names Fingerly.
-
-One deadline, `timeout` (5 seconds by default), covers reading the browser's
-body and the whole upstream exchange, so a trickling answer cannot stretch it.
-When it passes during the upstream call the browser gets `504`; any other
-upstream failure (refused, reset, DNS, a truncated or malformed answer, an
-answer over 4 MiB, a redirect, a status outside 200 to 599) gets `502`.
-Redirects are never followed, also with a caller-supplied
-`http_client_builder`. A browser too slow to send its body gets `408`.
-Each carries a short `text/plain` body and `Cache-Control: no-store`. The
-answer is read in full before anything is relayed, so a broken upstream never
-reaches the browser as a `200`. A visitor who disconnects drops the service
-future, which cancels the upstream call.
+| Rule | Behaviour |
+| --- | --- |
+| Upstream | Browser and proxied native client SDKs post a single `v: 3` identification envelope to the one path, and the proxy forwards its raw request body bytes verbatim, as a `POST`, to Fingerly's one ingest URL, `https://api.fingerly.io/api/v1/ingest` (`api_version` changes the `v1`). |
+| Other methods | `405` for anything other than `POST` (plus `OPTIONS` when `allowed_origins` is configured). |
+| Subpaths | `404` |
+| Event reads | Need a secret key and stay unreachable from a browser by construction. |
+| Proxy key | Only a proxy key, `fly_px_{production\|staging\|development}_…`; `build()` returns a configuration error when it is missing or malformed. |
+| Public key | The caller's `x-api-key` must be a public key, `fly_pk_…`, from the same environment as the proxy key. A missing header, a public key of another environment, a secret `fly_sk_` key or any other value gets `401` (`text/plain; charset=utf-8`, `Cache-Control: no-store`) with nothing forwarded. |
+| Keys sent upstream | Every request carries the proxy key as `x-fingerly-proxy-key` and the browser's public key as `x-api-key`; a secret key is never sent. |
+| Sanitize and restore | All incoming `x-fingerly-*`, `cookie` and `authorization` headers are stripped, restoring `x-fingerly-sdk-platform` only when it matches an exact lowercase native or bridge platform (`ios`, `android`, `react-native`, `react-native-ios`, `react-native-android`, `flutter`, `flutter-ios`, `flutter-android`, `lynx-ios`, `lynx-android`, `capacitor`, `kotlin-multiplatform`). |
+| One channel | When `Origin` is present it is sent as `x-fingerly-origin` and the platform header is not sent, as on a direct call to the API. |
+| No origin and no platform | `400` (`missing_origin`), rejected locally. `x-fingerly-origin` is never synthesized from `Host`, `Referer` or the request URL. |
+| Body size | Bodies over 1 MiB get `413`. |
+| Forwarded upstream | Alongside verified proxy metadata (`x-fingerly-host` included), only `content-type`, `x-api-key`, `user-agent`, `idempotency-key`, `sec-fetch-*` and `sec-ch-ua-*`. Customer cookies and authorization headers never are. |
+| Proxy identity | The proxy reports itself upstream as `rust/0.3.0`, which the dashboard shows per proxy. |
+| Relayed back | Only `Content-Type`, `X-Request-Id`, `RateLimit-Limit`, `RateLimit-Remaining` and `Retry-After`, plus `Cache-Control: no-store`, so nothing on the response names Fingerly. |
+| Deadline | One deadline, `timeout` (5 seconds by default), covers reading the browser's body and the whole upstream exchange, so a trickling answer cannot stretch it. |
+| Deadline passes during the upstream call | `504` |
+| Any other upstream failure | `502`: refused, reset, DNS, a truncated or malformed answer, an answer over 4 MiB, a redirect, a status outside 200 to 599. |
+| Redirects | Never followed, also with a caller-supplied `http_client_builder`. |
+| Browser too slow to send its body | `408` |
+| Error responses | Each carries a short `text/plain` body and `Cache-Control: no-store`. |
+| Broken upstream | The answer is read in full before anything is relayed, so a broken upstream never reaches the browser as a `200`. |
+| Visitor disconnects | Dropping the service future cancels the upstream call. |
 
 Each upstream failure is reported once: to `on_error` if you set one,
 otherwise as one `tracing` warning under the `fingerly::proxy` target. The line
@@ -510,16 +544,6 @@ let proxy = FingerlyProxy::builder()
     .build()?;
 ```
 
-> **`client_ip` is the one thing you must get right.** Resolve it from a header
-> your own infrastructure sets, such as your load balancer's or CDN's, and fall
-> back to the TCP peer. Never read the left-most `X-Forwarded-For` value: the
-> visitor writes it. The callback receives the request's `Parts`, so a
-> framework extension such as axum's `ConnectInfo` is reachable from inside
-> it. It must return exactly one IPv4 or IPv6 address. Anything else (empty, a
-> list, a port) is a configuration error: the proxy answers `500` with "The
-> client IP callback returned no valid address", calls nothing upstream, and
-> reports it once.
-
 ## Features
 
 | Feature | Default | What it adds |
@@ -533,7 +557,15 @@ let proxy = FingerlyProxy::builder()
 Turn `rustls` off and `native-tls` on together; picking neither leaves the
 client unable to reach an HTTPS endpoint.
 
+## Requirements
+
+Rust 1.88 or newer (`rust-version` in `Cargo.toml`), async on Tokio. CI builds
+on 1.88 and on stable.
+
 ## Development and release preparation
+
+<details>
+<summary>Checks, contract snapshot, MSRV, source structure</summary>
 
 ```sh
 cargo fmt --all --check
@@ -553,7 +585,7 @@ verified fact rather than a claim. `.cargo/config.toml` turns on the
 MSRV-aware resolver for this repository, which is what keeps a dependency
 bump from silently raising it.
 
-## Source structure
+### Source structure
 
 `client.rs` holds `Fingerly` and its builder. `transport.rs` performs
 authenticated requests and maps failures to `Error::Api`. `events.rs` owns the
@@ -562,3 +594,23 @@ they decode into. `webhooks.rs` verifies signatures and needs nothing else in
 the crate. `proxy.rs` is the same-origin service. `config.rs` validates every
 caller-supplied option: keys, origins, API versions, proxy paths and durations,
 all before any network access. `errors.rs` holds the error type.
+
+</details>
+
+## Documentation
+
+- [Rust SDK guide](https://docs.fingerly.io/docs/sdks/rust)
+- [Webhooks](https://docs.fingerly.io/docs/webhooks)
+- [Proxy integrations](https://docs.fingerly.io/docs/proxy-integrations)
+- [API reference](https://docs.fingerly.io/reference/overview)
+- [API documentation on docs.rs](https://docs.rs/fingerly)
+
+## Help
+
+Open an issue on [this repository](https://github.com/fingerly-io/sdk-rust/issues), or write to
+[support@fingerly.io](mailto:support@fingerly.io). Report security issues to
+[security@fingerly.io](mailto:security@fingerly.io).
+
+## Licence
+
+Apache-2.0. See [LICENSE](https://github.com/fingerly-io/sdk-rust/blob/main/LICENSE).
