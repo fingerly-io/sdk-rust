@@ -318,6 +318,14 @@
             "type": "string"
           },
           "anonymity_network": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "tor",
+              "relay",
+              "vpn",
+              "proxy",
+              "hosting"
+            ],
             "type": "string"
           },
           "asn": {
@@ -333,9 +341,22 @@
             "type": "string"
           },
           "device_kind": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "desktop",
+              "mobile",
+              "tablet",
+              "server"
+            ],
             "type": "string"
           },
           "environment": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "production",
+              "staging",
+              "development"
+            ],
             "type": "string"
           },
           "has_document": {
@@ -355,6 +376,12 @@
             "type": "string"
           },
           "platform": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "web",
+              "android",
+              "ios"
+            ],
             "type": "string"
           },
           "project_id": {
@@ -375,9 +402,20 @@
             "type": "string"
           },
           "state": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "enriched",
+              "unavailable"
+            ],
             "type": "string"
           },
           "suspect_level": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
             "type": "string"
           },
           "suspect_score": {
@@ -406,6 +444,13 @@
             "type": "string"
           },
           "visitor_kind": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "human",
+              "ai_bot",
+              "automation",
+              "search_crawler"
+            ],
             "type": "string"
           }
         },
@@ -426,9 +471,51 @@
       "EventTriggerOut": {
         "properties": {
           "confidence": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
             "type": "string"
           },
           "signal": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "tor",
+              "ios_simulator",
+              "mitm_attack",
+              "frida_detected",
+              "virtual_machine",
+              "remote_control",
+              "datacenter_proxy",
+              "ip_blocklist",
+              "rooted_device",
+              "jailbroken_device",
+              "android_emulator",
+              "cloned_app",
+              "browser_tampering",
+              "fingerprint_suppressed",
+              "developer_tools",
+              "device_farm",
+              "bot",
+              "ip_reputation",
+              "residential_proxy",
+              "privacy_settings",
+              "embedded_web_view",
+              "high_activity",
+              "location_spoofing",
+              "vpn",
+              "incognito_mode",
+              "active_call",
+              "attestation_missing",
+              "attestation_failed",
+              "device_inconsistent",
+              "report_incomplete",
+              "custom_root_ca",
+              "secondary_user_profile",
+              "network_anomaly"
+            ],
             "type": "string"
           },
           "weight": {
@@ -527,10 +614,22 @@
           },
           "attest_skipped": {
             "description": "Native only, and only without attest: why the SDK sent no attestation. One of not_offered, unsupported, challenge_unavailable, key_error, timeout, backoff, install_unavailable. Diagnostic; it never lowers the score",
+            "enum": [
+              "not_offered",
+              "unsupported",
+              "challenge_unavailable",
+              "key_error",
+              "timeout",
+              "backoff",
+              "install_unavailable"
+            ],
             "type": "string"
           },
           "consent": {
             "description": "The SDK's consent state; must be granted, or the request is refused with consent_required",
+            "enum": [
+              "granted"
+            ],
             "type": "string"
           },
           "op": {
@@ -573,7 +672,13 @@
             "type": "string"
           },
           "attest_key_status": {
-            "description": "Native only, present whenever attest was sent: registered (the key was verified, stored and owns the install), valid (an assertion verified against a stored key), rekey_required (the key is unknown or expired), rejected (attestation failed)",
+            "description": "Native only, present whenever attest was sent: registered (the key was verified, stored and owns the install), valid (an assertion verified against a stored key), rekey_required (the key is unknown or expired), rejected (attestation failed). New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "registered",
+              "valid",
+              "rekey_required",
+              "rejected"
+            ],
             "type": "string"
           },
           "duplicate": {
@@ -615,11 +720,20 @@
             "type": "string"
           },
           "state": {
-            "description": "Whether the address could be enriched",
+            "description": "Whether the address could be enriched. New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "enriched",
+              "unavailable"
+            ],
             "type": "string"
           },
           "suspect_level": {
-            "description": "low, medium or high. Absent whenever suspect_score is",
+            "description": "low, medium or high. Absent whenever suspect_score is. New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
             "type": "string"
           },
           "suspect_score": {
@@ -664,12 +778,115 @@
       "IdentifyTriggerOut": {
         "properties": {
           "confidence": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
             "type": "string"
           },
           "group": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "tor",
+              "ios_simulator",
+              "mitm_attack",
+              "frida_detected",
+              "virtual_machine",
+              "remote_control",
+              "datacenter_proxy",
+              "ip_blocklist",
+              "rooted_device",
+              "jailbroken_device",
+              "android_emulator",
+              "cloned_app",
+              "browser_tampering",
+              "fingerprint_suppressed",
+              "developer_tools",
+              "device_farm",
+              "bot",
+              "ip_reputation",
+              "residential_proxy",
+              "privacy_settings",
+              "embedded_web_view",
+              "high_activity",
+              "location_spoofing",
+              "vpn",
+              "incognito_mode",
+              "active_call",
+              "attestation_missing",
+              "attestation_failed",
+              "device_inconsistent",
+              "report_incomplete",
+              "custom_root_ca",
+              "secondary_user_profile",
+              "network_anomaly"
+            ],
             "type": "string"
           },
           "signal": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "incognito",
+              "tampering",
+              "antidetect_browser",
+              "automation",
+              "fetch_metadata_missing",
+              "web_ticket_missing",
+              "web_ticket_invalid",
+              "bad_bot",
+              "device_farm",
+              "high_activity",
+              "virtual_machine",
+              "fingerprint_suppressed",
+              "embedded_web_view",
+              "privacy_settings",
+              "remote_control",
+              "developer_tools",
+              "geo_mismatch",
+              "device_inconsistent",
+              "report_incomplete",
+              "vpn_public",
+              "vpn_timezone",
+              "vpn_os_mismatch",
+              "vpn_relay",
+              "vpn_low_confidence",
+              "vpn_medium_confidence",
+              "vpn_high_confidence",
+              "tor",
+              "proxy",
+              "residential_proxy",
+              "residential_proxy_low_confidence",
+              "residential_proxy_medium_confidence",
+              "residential_proxy_high_confidence",
+              "ip_blocklist_email_spam",
+              "ip_blocklist_attack_source",
+              "ip_abuser",
+              "datacenter_ip",
+              "bogon_ip",
+              "anycast_ip",
+              "emulator",
+              "root_apps",
+              "app_cloner",
+              "play_device_integrity_failed",
+              "play_app_unrecognized",
+              "device_activity_high",
+              "device_activity_very_high",
+              "frida",
+              "mitm_attack",
+              "active_call",
+              "attestation_failed",
+              "attestation_missing",
+              "attestation_downgrade",
+              "probe_errors",
+              "custom_root_ca",
+              "secondary_user_profile",
+              "vpn_mobile",
+              "jailbreak",
+              "simulator",
+              "repeated_reinstall"
+            ],
             "type": "string"
           },
           "weight": {
@@ -701,10 +918,22 @@
           },
           "attest_skipped": {
             "description": "Native only, and only without attest: why the SDK sent no attestation. One of not_offered, unsupported, challenge_unavailable, key_error, timeout, backoff, install_unavailable. Diagnostic; it never lowers the score",
+            "enum": [
+              "not_offered",
+              "unsupported",
+              "challenge_unavailable",
+              "key_error",
+              "timeout",
+              "backoff",
+              "install_unavailable"
+            ],
             "type": "string"
           },
           "consent": {
             "description": "The SDK's consent state; must be granted, or the request is refused with consent_required",
+            "enum": [
+              "granted"
+            ],
             "type": "string"
           },
           "op": {
@@ -955,6 +1184,12 @@
             "type": "string"
           },
           "environment": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "production",
+              "staging",
+              "development"
+            ],
             "type": "string"
           },
           "expires_at": {
@@ -1083,6 +1318,12 @@
             "type": "object"
           },
           "platform": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "web",
+              "android",
+              "ios"
+            ],
             "type": "string"
           },
           "residential_proxy_weights_mode": {
@@ -1098,7 +1339,68 @@
             "type": "string"
           },
           "signals": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
             "items": {
+              "enum": [
+                "incognito",
+                "tampering",
+                "antidetect_browser",
+                "automation",
+                "fetch_metadata_missing",
+                "web_ticket_missing",
+                "web_ticket_invalid",
+                "bad_bot",
+                "device_farm",
+                "high_activity",
+                "virtual_machine",
+                "fingerprint_suppressed",
+                "embedded_web_view",
+                "privacy_settings",
+                "remote_control",
+                "developer_tools",
+                "geo_mismatch",
+                "device_inconsistent",
+                "report_incomplete",
+                "vpn_public",
+                "vpn_timezone",
+                "vpn_os_mismatch",
+                "vpn_relay",
+                "vpn_low_confidence",
+                "vpn_medium_confidence",
+                "vpn_high_confidence",
+                "tor",
+                "proxy",
+                "residential_proxy",
+                "residential_proxy_low_confidence",
+                "residential_proxy_medium_confidence",
+                "residential_proxy_high_confidence",
+                "ip_blocklist_email_spam",
+                "ip_blocklist_attack_source",
+                "ip_abuser",
+                "datacenter_ip",
+                "bogon_ip",
+                "anycast_ip",
+                "emulator",
+                "root_apps",
+                "app_cloner",
+                "play_device_integrity_failed",
+                "play_app_unrecognized",
+                "device_activity_high",
+                "device_activity_very_high",
+                "frida",
+                "mitm_attack",
+                "active_call",
+                "attestation_failed",
+                "attestation_missing",
+                "attestation_downgrade",
+                "probe_errors",
+                "custom_root_ca",
+                "secondary_user_profile",
+                "vpn_mobile",
+                "jailbreak",
+                "simulator",
+                "repeated_reinstall"
+              ],
               "type": "string"
             },
             "type": "array"
@@ -1175,6 +1477,14 @@
             "type": "string"
           },
           "anonymity_network": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "tor",
+              "relay",
+              "vpn",
+              "proxy",
+              "hosting"
+            ],
             "type": "string"
           },
           "asn": {
@@ -1198,6 +1508,13 @@
             "type": "string"
           },
           "device_kind": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "desktop",
+              "mobile",
+              "tablet",
+              "server"
+            ],
             "type": "string"
           },
           "document": {
@@ -1208,6 +1525,12 @@
             ]
           },
           "environment": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "production",
+              "staging",
+              "development"
+            ],
             "type": "string"
           },
           "has_document": {
@@ -1227,6 +1550,12 @@
             "type": "string"
           },
           "platform": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "web",
+              "android",
+              "ios"
+            ],
             "type": "string"
           },
           "project_id": {
@@ -1247,9 +1576,20 @@
             "type": "string"
           },
           "state": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "enriched",
+              "unavailable"
+            ],
             "type": "string"
           },
           "suspect_level": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
             "type": "string"
           },
           "suspect_score": {
@@ -1278,6 +1618,13 @@
             "type": "string"
           },
           "visitor_kind": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "human",
+              "ai_bot",
+              "automation",
+              "search_crawler"
+            ],
             "type": "string"
           }
         },
@@ -1370,6 +1717,12 @@
             "type": "string"
           },
           "environment": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "production",
+              "staging",
+              "development"
+            ],
             "type": "string"
           },
           "expires_at": {
@@ -1503,7 +1856,13 @@
             "type": "integer"
           },
           "platforms": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
             "items": {
+              "enum": [
+                "web",
+                "android",
+                "ios"
+              ],
               "type": "string"
             },
             "type": "array"
@@ -1523,19 +1882,67 @@
             "type": "string"
           },
           "inactive_on": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
             "items": {
+              "enum": [
+                "web",
+                "android",
+                "ios"
+              ],
               "type": "string"
             },
             "type": "array"
           },
           "key": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "tor",
+              "ios_simulator",
+              "mitm_attack",
+              "frida_detected",
+              "virtual_machine",
+              "remote_control",
+              "datacenter_proxy",
+              "ip_blocklist",
+              "rooted_device",
+              "jailbroken_device",
+              "android_emulator",
+              "cloned_app",
+              "browser_tampering",
+              "fingerprint_suppressed",
+              "developer_tools",
+              "device_farm",
+              "bot",
+              "ip_reputation",
+              "residential_proxy",
+              "privacy_settings",
+              "embedded_web_view",
+              "high_activity",
+              "location_spoofing",
+              "vpn",
+              "incognito_mode",
+              "active_call",
+              "attestation_missing",
+              "attestation_failed",
+              "device_inconsistent",
+              "report_incomplete",
+              "custom_root_ca",
+              "secondary_user_profile",
+              "network_anomaly"
+            ],
             "type": "string"
           },
           "label": {
             "type": "string"
           },
           "platforms": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
             "items": {
+              "enum": [
+                "web",
+                "android",
+                "ios"
+              ],
               "type": "string"
             },
             "type": "array"
@@ -1567,12 +1974,79 @@
       "SignalMemberOut": {
         "properties": {
           "inactive_on": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
             "items": {
+              "enum": [
+                "web",
+                "android",
+                "ios"
+              ],
               "type": "string"
             },
             "type": "array"
           },
           "signal": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "incognito",
+              "tampering",
+              "antidetect_browser",
+              "automation",
+              "fetch_metadata_missing",
+              "web_ticket_missing",
+              "web_ticket_invalid",
+              "bad_bot",
+              "device_farm",
+              "high_activity",
+              "virtual_machine",
+              "fingerprint_suppressed",
+              "embedded_web_view",
+              "privacy_settings",
+              "remote_control",
+              "developer_tools",
+              "geo_mismatch",
+              "device_inconsistent",
+              "report_incomplete",
+              "vpn_public",
+              "vpn_timezone",
+              "vpn_os_mismatch",
+              "vpn_relay",
+              "vpn_low_confidence",
+              "vpn_medium_confidence",
+              "vpn_high_confidence",
+              "tor",
+              "proxy",
+              "residential_proxy",
+              "residential_proxy_low_confidence",
+              "residential_proxy_medium_confidence",
+              "residential_proxy_high_confidence",
+              "ip_blocklist_email_spam",
+              "ip_blocklist_attack_source",
+              "ip_abuser",
+              "datacenter_ip",
+              "bogon_ip",
+              "anycast_ip",
+              "emulator",
+              "root_apps",
+              "app_cloner",
+              "play_device_integrity_failed",
+              "play_app_unrecognized",
+              "device_activity_high",
+              "device_activity_very_high",
+              "frida",
+              "mitm_attack",
+              "active_call",
+              "attestation_failed",
+              "attestation_missing",
+              "attestation_downgrade",
+              "probe_errors",
+              "custom_root_ca",
+              "secondary_user_profile",
+              "vpn_mobile",
+              "jailbreak",
+              "simulator",
+              "repeated_reinstall"
+            ],
             "type": "string"
           },
           "weights": {
@@ -1649,6 +2123,12 @@
             "type": "integer"
           },
           "environment": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "production",
+              "staging",
+              "development"
+            ],
             "type": "string"
           },
           "id": {
@@ -1864,6 +2344,11 @@
             "type": "string"
           },
           "environment": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "live",
+              "test"
+            ],
             "type": "string"
           },
           "error": {
@@ -1873,6 +2358,15 @@
             ]
           },
           "event": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "identification.completed",
+              "identification.refused",
+              "visitor.suspect",
+              "billing.status_changed",
+              "usage.daily_settled",
+              "webhook.test"
+            ],
             "type": "string"
           },
           "event_id": {
@@ -1930,10 +2424,23 @@
             "type": "string"
           },
           "environment": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "live",
+              "test"
+            ],
             "type": "string"
           },
           "events": {
+            "description": "New values can be added within API v1, so accept values not listed here.",
             "items": {
+              "enum": [
+                "identification.completed",
+                "identification.refused",
+                "visitor.suspect",
+                "billing.status_changed",
+                "usage.daily_settled"
+              ],
               "type": "string"
             },
             "type": "array"
@@ -2173,6 +2680,11 @@
             "in": "query",
             "name": "level",
             "schema": {
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ],
               "type": "string"
             }
           }
@@ -4269,6 +4781,10 @@
             "name": "platform",
             "required": true,
             "schema": {
+              "enum": [
+                "ios",
+                "android"
+              ],
               "type": "string"
             }
           },
@@ -4792,6 +5308,11 @@
                 "properties": {
                   "environment": {
                     "description": "production, staging or development",
+                    "enum": [
+                      "production",
+                      "staging",
+                      "development"
+                    ],
                     "type": "string"
                   },
                   "kind": {
@@ -5212,6 +5733,11 @@
             "name": "platform",
             "required": true,
             "schema": {
+              "enum": [
+                "web",
+                "android",
+                "ios"
+              ],
               "type": "string"
             }
           }
@@ -5309,6 +5835,11 @@
             "name": "platform",
             "required": true,
             "schema": {
+              "enum": [
+                "web",
+                "android",
+                "ios"
+              ],
               "type": "string"
             }
           }
@@ -5602,6 +6133,11 @@
                   },
                   "environment": {
                     "description": "production, staging or development",
+                    "enum": [
+                      "production",
+                      "staging",
+                      "development"
+                    ],
                     "type": "string"
                   },
                   "expires_at": {
@@ -6415,6 +6951,11 @@
             "name": "platform",
             "required": true,
             "schema": {
+              "enum": [
+                "web",
+                "android",
+                "ios"
+              ],
               "type": "string"
             }
           }
@@ -6521,6 +7062,11 @@
             "name": "platform",
             "required": true,
             "schema": {
+              "enum": [
+                "web",
+                "android",
+                "ios"
+              ],
               "type": "string"
             }
           }
@@ -6999,6 +7545,11 @@
             "name": "environment",
             "schema": {
               "default": "all",
+              "enum": [
+                "all",
+                "live",
+                "test"
+              ],
               "type": "string"
             }
           },
@@ -7203,10 +7754,21 @@
                     "type": "string"
                   },
                   "environment": {
+                    "enum": [
+                      "live",
+                      "test"
+                    ],
                     "type": "string"
                   },
                   "events": {
                     "items": {
+                      "enum": [
+                        "identification.completed",
+                        "identification.refused",
+                        "visitor.suspect",
+                        "billing.status_changed",
+                        "usage.daily_settled"
+                      ],
                       "type": "string"
                     },
                     "type": "array"
@@ -7417,6 +7979,11 @@
                     ]
                   },
                   "environment": {
+                    "enum": [
+                      "live",
+                      "test",
+                      null
+                    ],
                     "type": [
                       "string",
                       "null"
@@ -7424,6 +7991,13 @@
                   },
                   "events": {
                     "items": {
+                      "enum": [
+                        "identification.completed",
+                        "identification.refused",
+                        "visitor.suspect",
+                        "billing.status_changed",
+                        "usage.daily_settled"
+                      ],
                       "type": "string"
                     },
                     "type": [
