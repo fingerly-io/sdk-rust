@@ -5,8 +5,9 @@ use std::sync::Arc;
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use serde::Deserialize;
 
+use crate::enums::SuspectLevel;
 use crate::errors::{Error, Result};
-use crate::models::{Event, EventPage, SuspectLevel};
+use crate::models::{Event, EventPage};
 use crate::transport::Transport;
 
 /// Everything outside the unreserved set is escaped, so a request id can never
@@ -128,7 +129,7 @@ impl EventListParams {
         if let Some(visitor) = &self.visitor {
             pairs.append_pair("visitor", visitor);
         }
-        if let Some(level) = self.level {
+        if let Some(level) = &self.level {
             pairs.append_pair("level", level.as_str());
         }
         let query = pairs.finish();
@@ -292,7 +293,7 @@ impl EventsClient {
         }
         Ok(Verification {
             ok: true,
-            reason: None,
+            reason: VerifyReason::Ok,
             event: Some(event),
         })
     }
@@ -365,6 +366,8 @@ impl VerifyOptions {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum VerifyReason {
+    /// Every check passed. Its wire value is `""`.
+    Ok,
     /// There is no such event: never issued, or past retention.
     NotFound,
     /// It happened longer ago than the maximum age, or its time is unreadable.
@@ -380,9 +383,10 @@ pub enum VerifyReason {
 }
 
 impl VerifyReason {
-    /// The wire value, such as `too_old`.
+    /// The wire value, such as `too_old`, or `""` for [`VerifyReason::Ok`].
     pub fn as_str(self) -> &'static str {
         match self {
+            VerifyReason::Ok => "",
             VerifyReason::NotFound => "not_found",
             VerifyReason::TooOld => "too_old",
             VerifyReason::TagMismatch => "tag_mismatch",
@@ -406,8 +410,9 @@ pub struct Verification {
     /// `true` when every check passed (and the event was consumed, unless
     /// consuming was turned off).
     pub ok: bool,
-    /// The first check that failed; `None` when [`ok`](Self::ok).
-    pub reason: Option<VerifyReason>,
+    /// The first check that failed; [`VerifyReason::Ok`] when
+    /// [`ok`](Self::ok).
+    pub reason: VerifyReason,
     /// The event read. `None` only for [`VerifyReason::NotFound`].
     pub event: Option<Event>,
 }
@@ -416,14 +421,14 @@ impl Verification {
     fn failed(reason: VerifyReason, event: Option<Event>) -> Self {
         Verification {
             ok: false,
-            reason: Some(reason),
+            reason,
             event,
         }
     }
 
     /// The reason's wire value, or `""` when [`ok`](Self::ok).
     pub fn reason_str(&self) -> &'static str {
-        self.reason.map_or("", VerifyReason::as_str)
+        self.reason.as_str()
     }
 }
 

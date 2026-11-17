@@ -154,7 +154,7 @@ async fn verifies_reads_then_consumes_once() {
         .unwrap();
 
     assert!(verification.ok);
-    assert_eq!(verification.reason, None);
+    assert_eq!(verification.reason, VerifyReason::Ok);
     assert_eq!(verification.reason_str(), "");
     assert_eq!(verification.event.unwrap().visitor_id, "vis_1");
     let requests = server.requests();
@@ -211,9 +211,12 @@ async fn refused(answer: Canned, options: VerifyOptions) -> (VerifyReason, bool)
         "consumed after a failed check"
     );
     assert_eq!(server.request_count(), 1);
-    let reason = verification
-        .reason
-        .expect("a failed verification has a reason");
+    let reason = verification.reason;
+    assert_ne!(
+        reason,
+        VerifyReason::Ok,
+        "a failed verification has a reason"
+    );
     assert_eq!(verification.reason_str(), reason.as_str());
     (reason, verification.event.is_some())
 }
@@ -377,7 +380,7 @@ async fn already_consumed_keeps_the_event() {
             .await
             .unwrap();
         assert!(!verification.ok);
-        assert_eq!(verification.reason, Some(VerifyReason::AlreadyConsumed));
+        assert_eq!(verification.reason, VerifyReason::AlreadyConsumed);
         assert_eq!(verification.reason_str(), "already_consumed");
         assert!(verification.event.is_some());
         assert_eq!(consume_requests(&server), 1);
@@ -392,7 +395,7 @@ async fn not_found_on_consume_has_no_event() {
         .verify("req_1", VerifyOptions::new())
         .await
         .unwrap();
-    assert_eq!(verification.reason, Some(VerifyReason::NotFound));
+    assert_eq!(verification.reason, VerifyReason::NotFound);
     assert!(verification.event.is_none());
 }
 

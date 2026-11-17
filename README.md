@@ -197,20 +197,32 @@ WebView, or an unmatched high-risk Web payload), `event.visitor_id` is `""`;
 there are no `deferred_token`, `deferred_signals` or `supplements` fields in
 `v: 3`.
 
-The `fingerly::signals` module defines constants for every `v: 3` signal,
-including `signals::ATTESTATION_FAILED` (`"attestation_failed"`),
-`signals::ATTESTATION_DOWNGRADE` (`"attestation_downgrade"`),
-`signals::DEVICE_INCONSISTENT` (`"device_inconsistent"`),
-`signals::REPORT_INCOMPLETE` (`"report_incomplete"`),
-`signals::PROBE_ERRORS` (`"probe_errors"`),
-`signals::FETCH_METADATA_MISSING` (`"fetch_metadata_missing"`),
-`signals::WEB_TICKET_MISSING` (`"web_ticket_missing"`),
-`signals::WEB_TICKET_INVALID` (`"web_ticket_invalid"`),
-`signals::TAMPERING` (`"tampering"`),
-`signals::CUSTOM_ROOT_CA` (`"custom_root_ca"`) and
-`signals::SECONDARY_USER_PROFILE` (`"secondary_user_profile"`). A native
-`Attestation` also carries `attest_skipped` (the app's reason for sending no
-proof) and `downgrade` (the report named an install an attested device owns).
+Every closed set the API reports is an enum with a variant per value and an
+`Other(String)` variant that keeps a value this build does not know, so one
+the server adds later still deserializes. Match or compare on the variants,
+not on strings; `From<&str>` builds one, `as_str()` gives the wire value back,
+and every enum is `#[non_exhaustive]`:
+
+| Enum | Fields | Variants |
+| --- | --- | --- |
+| `Signal` | `EventTrigger::signal` (groups), `EventRiskTrigger::signal` (raw detectors) | `Vpn`, `Bot`, `FingerprintSuppressed`, `AttestationFailed`, `VpnPublic`, ... (every group and detector) |
+| `SuspectLevel` | `Event::suspect_level`, `EventRiskReport::level`, `EventListParams::level` | `Low`, `Medium`, `High` |
+| `Confidence` | `EventTrigger::confidence`, `EventRiskTrigger::confidence` | `Low`, `Medium`, `High` |
+| `AttestationState` | `Attestation::state` | `Attested`, `NotAttested`, `Failed` |
+| `AttestationStatus` | `Attestation::status` | `Verified`, `Indeterminate`, `Invalid`, `Absent`, `Unconfigured` |
+| `AttestSkippedReason` | `Attestation::attest_skipped` | `NotOffered`, `Unsupported`, `ChallengeUnavailable`, `KeyError`, `Timeout`, `Backoff`, `InstallUnavailable` |
+| `EventState` | `Event::state` | `Pending`, `Enriched`, `Unavailable` |
+| `AnonymityNetwork` | `Event::anonymity_network` | `Tor`, `Relay`, `Vpn`, `Proxy`, `Hosting` |
+| `Environment` | `Event::environment` | `Production`, `Staging`, `Development` |
+| `RiskPlatform` | `Event::platform`, `EventRiskReport::platform` | `Web`, `Ios`, `Android` |
+| `RiskSource` | `EventRiskReport::source` | `Key`, `Organization`, `Default` |
+| `VerifyReason` | `Verification::reason` | `Ok`, `NotFound`, `TooOld`, `TagMismatch`, `Unidentifiable`, `Unscored`, `AlreadyConsumed` |
+| `WebhookEventType` | `WebhookEvent::event_type` | `IdentificationCompleted`, `IdentificationRefused`, `VisitorSuspect`, `BillingStatusChanged`, `UsageDailySettled`, `Test` |
+| `WebhookEnvironment` | `WebhookEvent::environment` | `Live`, `Test` |
+
+A native `Attestation` also carries `attest_skipped` (the app's reason for
+sending no proof) and `downgrade` (the report named an install an attested
+device owns).
 
 `Event::project_id` names the Fingerly project the event belongs to, as a UUID
 string. It is `None` when the server is older than projects.
@@ -242,7 +254,7 @@ checks in order, stopping at the first that fails. It returns a
 Consuming comes last and happens only when every other check passes, so one
 event backs one decision: the first `verify` consumes it, and any later one
 answers `already_consumed`. Pass `.consume(false)` to check without consuming.
-When everything passes, `ok` is `true`, `reason` is `None` and
+When everything passes, `ok` is `true`, `reason` is `VerifyReason::Ok` and
 `reason_str()` is `""`. `event` holds the event read, and is `None` only for
 `not_found`.
 
@@ -251,7 +263,7 @@ with you, on the event it returns. Any other failure is returned as an error,
 including `event_pending`, which is not a verdict.
 
 ```rust
-use fingerly::{signals, Error, Fingerly, VerifyOptions};
+use fingerly::{Error, Fingerly, Signal, SuspectLevel, VerifyOptions};
 
 enum Verdict {
     Allow,
@@ -281,10 +293,10 @@ async fn verify(fingerly: &Fingerly, request_id: &str, tag: &str) -> Result<Verd
         return Ok(Verdict::Refuse);
     };
     // Your score policy.
-    if event.suspect_level.as_deref() == Some("high") {
+    if event.suspect_level == Some(SuspectLevel::High) {
         return Ok(Verdict::Refuse);
     }
-    if event.triggers.iter().any(|t| t.signal == signals::ATTESTATION_FAILED) {
+    if event.triggers.iter().any(|t| t.signal == Signal::AttestationFailed) {
         return Ok(Verdict::Refuse);
     }
     Ok(Verdict::Allow)
@@ -383,7 +395,9 @@ before decoding them: re-serialising them changes the digest.
 | Deduplication | verification proves authenticity and freshness only; persist processed `WebhookEvent::id` values as well |
 
 `WebhookEvent` decodes the envelope every delivery shares and leaves `data`
-raw, so a new event type needs no SDK upgrade. `identification.completed` and
+raw, so a new event type needs no SDK upgrade. Match `event_type` on the
+`WebhookEventType` variants, such as `WebhookEventType::IdentificationCompleted`.
+`identification.completed` and
 `visitor.suspect` carry `data.project_id`; `identification.refused` carries it
 only when the refused request named a known key.
 
@@ -495,7 +509,7 @@ its body read yourself, because `timeout` only starts once `handle` is called.
 | No origin and no platform | `400` (`missing_origin`), rejected locally. `x-fingerly-origin` is never synthesized from `Host`, `Referer` or the request URL. |
 | Body size | Bodies over 1 MiB get `413`. |
 | Forwarded upstream | Alongside verified proxy metadata (`x-fingerly-host` included), only `content-type`, `x-api-key`, `user-agent`, `idempotency-key`, `sec-fetch-*` and `sec-ch-ua-*`. Customer cookies and authorization headers never are. |
-| Proxy identity | The proxy reports itself upstream as `rust/0.3.0`, which the dashboard shows per proxy. |
+| Proxy identity | The proxy reports itself upstream as `rust/0.4.0`, which the dashboard shows per proxy. |
 | Relayed back | Only `Content-Type`, `X-Request-Id`, `RateLimit-Limit`, `RateLimit-Remaining` and `Retry-After`, plus `Cache-Control: no-store`, so nothing on the response names Fingerly. |
 | Deadline | One deadline, `timeout` (5 seconds by default), covers reading the browser's body and the whole upstream exchange, so a trickling answer cannot stretch it. |
 | Deadline passes during the upstream call | `504` |

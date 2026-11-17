@@ -13,7 +13,10 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use common::{Canned, TestServer, SECRET_KEY};
-use fingerly::{signals, Attestation, Error, Event, EventListParams, Fingerly, WebhookVerifier};
+use fingerly::{
+    AttestSkippedReason, Attestation, AttestationState, AttestationStatus, Error, Event,
+    EventListParams, Fingerly, Signal, WebhookVerifier,
+};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -320,18 +323,24 @@ async fn v3_openapi_and_models_match_single_path_contract() {
     assert!(!event_props.contains_key("deferred_token"));
 
     let v3_signals = [
-        signals::ATTESTATION_FAILED,
-        signals::DEVICE_INCONSISTENT,
-        signals::REPORT_INCOMPLETE,
-        signals::TAMPERING,
-        signals::CUSTOM_ROOT_CA,
-        signals::SECONDARY_USER_PROFILE,
+        Signal::AttestationFailed,
+        Signal::DeviceInconsistent,
+        Signal::ReportIncomplete,
+        Signal::Tampering,
+        Signal::CustomRootCa,
+        Signal::SecondaryUserProfile,
     ];
-    assert_eq!(signals::ATTESTATION_DOWNGRADE, "attestation_downgrade");
-    assert_eq!(signals::PROBE_ERRORS, "probe_errors");
-    assert_eq!(signals::FETCH_METADATA_MISSING, "fetch_metadata_missing");
-    assert_eq!(signals::WEB_TICKET_MISSING, "web_ticket_missing");
-    assert_eq!(signals::WEB_TICKET_INVALID, "web_ticket_invalid");
+    assert_eq!(
+        Signal::AttestationDowngrade.as_str(),
+        "attestation_downgrade"
+    );
+    assert_eq!(Signal::ProbeErrors.as_str(), "probe_errors");
+    assert_eq!(
+        Signal::FetchMetadataMissing.as_str(),
+        "fetch_metadata_missing"
+    );
+    assert_eq!(Signal::WebTicketMissing.as_str(), "web_ticket_missing");
+    assert_eq!(Signal::WebTicketInvalid.as_str(), "web_ticket_invalid");
     let payload = serde_json::json!({
         "request_id": "req_v3_unidentifiable",
         "visitor_id": "",
@@ -344,12 +353,12 @@ async fn v3_openapi_and_models_match_single_path_contract() {
         "suspect_score": 88,
         "suspect_level": "high",
         "triggers": [
-            {"signal": signals::ATTESTATION_FAILED, "weight": 35, "confidence": "high"},
-            {"signal": signals::DEVICE_INCONSISTENT, "weight": 20, "confidence": "high"},
-            {"signal": signals::REPORT_INCOMPLETE, "weight": 15, "confidence": "medium"},
-            {"signal": signals::TAMPERING, "weight": 10, "confidence": "high"},
-            {"signal": signals::CUSTOM_ROOT_CA, "weight": 4, "confidence": "medium"},
-            {"signal": signals::SECONDARY_USER_PROFILE, "weight": 4, "confidence": "low"}
+            {"signal": Signal::AttestationFailed.as_str(), "weight": 35, "confidence": "high"},
+            {"signal": Signal::DeviceInconsistent.as_str(), "weight": 20, "confidence": "high"},
+            {"signal": Signal::ReportIncomplete.as_str(), "weight": 15, "confidence": "medium"},
+            {"signal": Signal::Tampering.as_str(), "weight": 10, "confidence": "high"},
+            {"signal": Signal::CustomRootCa.as_str(), "weight": 4, "confidence": "medium"},
+            {"signal": Signal::SecondaryUserProfile.as_str(), "weight": 4, "confidence": "low"}
         ],
         "has_document": true,
         "document": {
@@ -380,7 +389,7 @@ async fn v3_openapi_and_models_match_single_path_contract() {
                 "source": "default",
                 "triggers": [
                     {
-                        "signal": signals::ATTESTATION_FAILED,
+                        "signal": Signal::AttestationFailed.as_str(),
                         "weight": 35,
                         "confidence": "high",
                         "reason": "bootloader_unlocked"
@@ -400,7 +409,7 @@ async fn v3_openapi_and_models_match_single_path_contract() {
     assert_eq!(event.visitor_id, "");
     assert!(!event.is_identifiable());
     assert_eq!(event.score(), Some(88));
-    let seen_signals: Vec<&str> = event.triggers.iter().map(|t| t.signal.as_str()).collect();
+    let seen_signals: Vec<Signal> = event.triggers.iter().map(|t| t.signal.clone()).collect();
     assert_eq!(seen_signals, v3_signals);
 
     let doc = event
@@ -409,8 +418,8 @@ async fn v3_openapi_and_models_match_single_path_contract() {
         .expect("document present");
     assert_eq!(doc.sdk.platform, "react-native-android");
     let attestation = doc.attestation.expect("attestation present");
-    assert_eq!(attestation.state, "failed");
-    assert_eq!(attestation.status, "invalid");
+    assert_eq!(attestation.state, AttestationState::Failed);
+    assert_eq!(attestation.status, AttestationStatus::Invalid);
     assert_eq!(attestation.platform.as_deref(), Some("android"));
     assert_eq!(attestation.reason.as_deref(), Some("bootloader_unlocked"));
     assert_eq!(attestation.device_locked, Some(false));
@@ -431,7 +440,10 @@ fn attestation_reads_attest_skipped_and_downgrade() {
         "downgrade": true
     }))
     .expect("decode attestation");
-    assert_eq!(attestation.attest_skipped.as_deref(), Some("timeout"));
+    assert_eq!(
+        attestation.attest_skipped,
+        Some(AttestSkippedReason::Timeout)
+    );
     assert!(attestation.downgrade);
 }
 

@@ -44,6 +44,7 @@ mod client;
 mod config;
 #[cfg(feature = "client")]
 mod device_check;
+mod enums;
 mod errors;
 #[cfg(feature = "client")]
 mod events;
@@ -76,10 +77,15 @@ pub use crate::proxy::{
     ClientIpFn, FingerlyProxy, FingerlyProxyBuilder, ProxyError, ProxyErrorHook, ProxyErrorKind,
 };
 
+pub use crate::enums::{
+    AnonymityNetwork, AttestSkippedReason, AttestationState, AttestationStatus, Confidence,
+    Environment, EventState, RiskPlatform, RiskSource, Signal, SuspectLevel, WebhookEnvironment,
+    WebhookEventType,
+};
 pub use crate::errors::{ApiError, Error, Result};
 pub use crate::models::{
-    signals, Attestation, Event, EventDocument, EventDocumentSdk, EventPage, EventRiskReport,
-    EventRiskTrigger, EventTrigger, SuspectLevel,
+    Attestation, Event, EventDocument, EventDocumentSdk, EventPage, EventRiskReport,
+    EventRiskTrigger, EventTrigger,
 };
 pub use crate::webhooks::{
     verify_webhook, WebhookEvent, WebhookVerifier, DEFAULT_WEBHOOK_TOLERANCE,
