@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1
+
+- Each `AttestSkippedReason` variant documents when the iOS and Android SDKs
+  send it.
+- The vendored OpenAPI contract declares the enum values of every closed set
+  the API reports, matching the SDK's enums.
+
 ## 0.4.0
 
 - Breaking: every closed set the API reports is an enum with an
