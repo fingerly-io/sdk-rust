@@ -24,7 +24,7 @@
 //!
 //! | Feature | Default | What it adds |
 //! | --- | --- | --- |
-//! | `client` | yes | [`Fingerly`] and event reads, over reqwest and Tokio. |
+//! | `client` | yes | [`Fingerly`], event reads and DeviceCheck bits, over reqwest and Tokio. |
 //! | `proxy` | yes | [`FingerlyProxy`], a [`tower_service::Service`]. Implies `client`. |
 //! | `rustls` | yes | TLS through rustls. |
 //! | `native-tls` | no | TLS through the platform's own stack instead. |
@@ -42,6 +42,8 @@
 mod client;
 #[cfg(feature = "client")]
 mod config;
+#[cfg(feature = "client")]
+mod device_check;
 mod errors;
 #[cfg(feature = "client")]
 mod events;
@@ -59,7 +61,15 @@ mod webhooks;
 pub use crate::client::{Fingerly, FingerlyBuilder};
 #[cfg(feature = "client")]
 #[cfg_attr(docsrs, doc(cfg(feature = "client")))]
-pub use crate::events::{EventListParams, EventsClient};
+pub use crate::device_check::{
+    DeviceCheckBits, DeviceCheckClient, DeviceCheckWrite, DeviceCheckWriteResult,
+};
+#[cfg(feature = "client")]
+#[cfg_attr(docsrs, doc(cfg(feature = "client")))]
+pub use crate::events::{
+    ConsumedEvent, EventListParams, EventsClient, Verification, VerifyOptions, VerifyReason,
+    DEFAULT_MAX_AGE_SECONDS,
+};
 #[cfg(feature = "proxy")]
 #[cfg_attr(docsrs, doc(cfg(feature = "proxy")))]
 pub use crate::proxy::{
@@ -67,7 +77,10 @@ pub use crate::proxy::{
 };
 
 pub use crate::errors::{ApiError, Error, Result};
-pub use crate::models::{Event, EventPage, EventTrigger, SuspectLevel};
+pub use crate::models::{
+    signals, Attestation, Event, EventDocument, EventDocumentSdk, EventPage, EventRiskReport,
+    EventRiskTrigger, EventTrigger, SuspectLevel,
+};
 pub use crate::webhooks::{
     verify_webhook, WebhookEvent, WebhookVerifier, DEFAULT_WEBHOOK_TOLERANCE,
 };

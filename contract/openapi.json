@@ -1,6 +1,80 @@
 {
   "components": {
     "schemas": {
+      "AttestEnvelope": {
+        "properties": {
+          "assertion": {
+            "description": "Base64 CBOR App Attest assertion object",
+            "type": "string"
+          },
+          "attestation_object": {
+            "description": "Base64 CBOR App Attest attestation object",
+            "type": "string"
+          },
+          "certificate_chain": {
+            "description": "Base64 DER X.509 certificate chain for Android key registration",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "challenge": {
+            "description": "Stateless server-signed challenge ticket",
+            "type": "string"
+          },
+          "device_token": {
+            "description": "Optional standard Base64 Apple DeviceCheck token, at most 4 KiB decoded, bound into statementDigest. Held for one hour and spent by POST /events/{request_id}/device-check/query",
+            "type": "string"
+          },
+          "device_token_write": {
+            "description": "Optional second standard Base64 Apple DeviceCheck token, at most 4 KiB decoded, bound into statementDigest. Held for one hour and spent by PUT /events/{request_id}/device-check",
+            "type": "string"
+          },
+          "install_id": {
+            "description": "Canonical 36-char lowercase UUIDv4 matching sources.identity.value.install_id",
+            "type": "string"
+          },
+          "key_id": {
+            "description": "Base64 App Attest key ID (iOS) or 64-char hex SPKI SHA-256 (Android)",
+            "type": "string"
+          },
+          "mode": {
+            "description": "app_attest_register, app_attest_assert, android_key_register, or android_key_assert",
+            "type": "string"
+          },
+          "play_integrity_token": {
+            "description": "Optional Google Play Integrity token with requestHash equal to hex(statementDigest)",
+            "type": "string"
+          },
+          "prev_assertion": {
+            "description": "iOS, app_attest_register only: standard Base64 CBOR App Attest assertion by the previous confirmed key (prev_key_id) with clientDataHash equal to statementDigest",
+            "type": "string"
+          },
+          "prev_key_id": {
+            "description": "Optional key ID of the previous confirmed key: 64-char hex (Android) or standard Base64 App Attest key ID (iOS, app_attest_register only)",
+            "type": "string"
+          },
+          "prev_signature": {
+            "description": "Optional Base64 ASN.1 DER signature by retiring Android key over identical framedPreimage",
+            "type": "string"
+          },
+          "reattest_attempt": {
+            "description": "Inline Android lease renewal attempt counter (0 or 1)",
+            "format": "int64",
+            "type": "integer"
+          },
+          "signature": {
+            "description": "Base64 ASN.1 DER SHA256withECDSA signature over framedPreimage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "challenge",
+          "install_id",
+          "mode"
+        ],
+        "type": "object"
+      },
       "AttestationChallengeOut": {
         "properties": {
           "app_attest": {
@@ -14,6 +88,10 @@
           "device_check": {
             "description": "Whether to send a DeviceCheck token with the App Attest evidence",
             "type": "boolean"
+          },
+          "digest_salt": {
+            "description": "The project's 32-byte name digest salt, unpadded base64url. The SDK caches it per SDK key and sends each name digest as the first 16 bytes of HMAC-SHA256(salt, name) in hex, with digest_salt_id. Absent when the server has none to give; the SDK then uses 32 zero bytes",
+            "type": "string"
           },
           "expires_at": {
             "description": "When the nonce becomes unusable",
@@ -436,8 +514,27 @@
       },
       "IdentifyIn": {
         "properties": {
+          "attest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AttestEnvelope"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Hardware attestation envelope bound to raw signals bytes (v3 native SDKs)"
+          },
+          "attest_skipped": {
+            "description": "Native only, and only without attest: why the SDK sent no attestation. One of not_offered, unsupported, challenge_unavailable, key_error, timeout, backoff, install_unavailable. Diagnostic; it never lowers the score",
+            "type": "string"
+          },
           "consent": {
             "description": "The SDK's consent state; must be granted, or the request is refused with consent_required",
+            "type": "string"
+          },
+          "op": {
+            "description": "Empty for a report. ticket asks for a web freshness ticket instead: a public key on the web only, with a body of v, op and sdk, answered 200 with ticket and expires_at, never charged",
             "type": "string"
           },
           "sdk": {
@@ -450,29 +547,64 @@
             "type": "object"
           },
           "tag": {
-            "description": "An opaque value echoed back on the event and kept in long-lived rollups. A label for your own systems, such as a client or app name; never a personal identifier (user ID, email, install ID or advertising ID)",
+            "description": "An opaque value echoed back on the event and kept in long-lived rollups. A label for your own systems, such as a client or app name; never a personal identifier (user ID, email, install ID or advertising ID). A value holding a control character (U+0000 to U+001F, U+007F) is refused with invalid_request",
             "type": "string"
+          },
+          "ticket": {
+            "description": "Web only: the freshness ticket from a ticket request or the previous answer's next_ticket. Single use, bound to the key and page origin, valid for 300 seconds. A native report carrying one is refused with invalid_request",
+            "type": "string"
+          },
+          "ticket_pow": {
+            "description": "Web only, next to a ticket whose answer carried pow_bits: the smallest decimal nonce n, from 0 up, such that SHA-256(ticket || ':' || n) starts with at least pow_bits zero bits",
+            "type": "string"
+          },
+          "v": {
+            "description": "Wire envelope version. Must equal 3.",
+            "format": "int64",
+            "type": "integer"
           }
         },
         "type": "object"
       },
       "IdentifyOut": {
         "properties": {
-          "app_attest_key": {
-            "description": "unknown when the report asserted with an App Attest key the server does not hold; the iOS SDK then attests a new key on its next collection. Absent otherwise",
+          "attest_key_id": {
+            "description": "Native only, present whenever attest was sent: the key_id the server evaluated, copied from attest.key_id",
             "type": "string"
           },
-          "deferred_token": {
-            "description": "Short-lived capability for the deferred signal report",
+          "attest_key_status": {
+            "description": "Native only, present whenever attest was sent: registered (the key was verified, stored and owns the install), valid (an assertion verified against a stored key), rekey_required (the key is unknown or expired), rejected (attestation failed)",
             "type": "string"
           },
           "duplicate": {
-            "description": "This submission was answered before; the verdict belongs to the first one",
+            "description": "This submission was answered before; the verdict replays the first one",
             "type": "boolean"
           },
           "identifiable": {
             "description": "False when the report carried too little to identify anyone",
             "type": "boolean"
+          },
+          "next_attestation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AttestationChallengeOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Fresh attestation challenge ticket and dynamic offer flags for the next native submission"
+          },
+          "next_ticket": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WebTicketOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Web only: a fresh freshness ticket for the next report from this page, so it needs no ticket request"
           },
           "reason": {
             "description": "Why enrichment did not happen. Only answered to a secret key; a browser or app reads it on the server-side event read",
@@ -511,7 +643,7 @@
             "type": "integer"
           },
           "visitor_id": {
-            "description": "Who this visitor is, stable across their visits",
+            "description": "Who this visitor is, stable across their visits; empty when unidentifiable",
             "type": "string"
           },
           "visitor_is_new": {
@@ -556,8 +688,27 @@
       },
       "IngestIn": {
         "properties": {
+          "attest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AttestEnvelope"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Hardware attestation envelope bound to raw signals bytes (v3 native SDKs)"
+          },
+          "attest_skipped": {
+            "description": "Native only, and only without attest: why the SDK sent no attestation. One of not_offered, unsupported, challenge_unavailable, key_error, timeout, backoff, install_unavailable. Diagnostic; it never lowers the score",
+            "type": "string"
+          },
           "consent": {
             "description": "The SDK's consent state; must be granted, or the request is refused with consent_required",
+            "type": "string"
+          },
+          "op": {
+            "description": "Empty for a report. ticket asks for a web freshness ticket instead: a public key on the web only, with a body of v, op and sdk, answered 200 with ticket and expires_at, never charged",
             "type": "string"
           },
           "sdk": {
@@ -570,12 +721,21 @@
             "type": "object"
           },
           "tag": {
-            "description": "An opaque value echoed back on the event and kept in long-lived rollups; never a personal identifier. Identify only",
+            "description": "An opaque value echoed back on the event and kept in long-lived rollups; never a personal identifier. A value holding a control character (U+0000 to U+001F, U+007F) is refused with invalid_request",
             "type": "string"
           },
-          "token": {
-            "description": "The deferred_token returned by identify. Present only on a deferred report",
+          "ticket": {
+            "description": "Web only: the freshness ticket from a ticket request or the previous answer's next_ticket. A native report carrying one is refused with invalid_request",
             "type": "string"
+          },
+          "ticket_pow": {
+            "description": "Web only: the proof of work for a ticket whose answer carried pow_bits",
+            "type": "string"
+          },
+          "v": {
+            "description": "Wire envelope version. Must equal 3.",
+            "format": "int64",
+            "type": "integer"
           }
         },
         "type": "object"
@@ -633,6 +793,41 @@
           "name",
           "organization_id",
           "role"
+        ],
+        "type": "object"
+      },
+      "PrivateAccessTokenIssuerIn": {
+        "properties": {
+          "directory_url": {
+            "description": "Instead of token_key: the issuer's HTTPS directory, read for its current type 2 keys",
+            "type": "string"
+          },
+          "issuer_name": {
+            "description": "The issuer's server name, host and optional port. Defaults to the directory URL's host",
+            "type": "string"
+          },
+          "token_key": {
+            "description": "The issuer's token type 2 key, base64url: a DER SubjectPublicKeyInfo of a 2048-bit RSASSA-PSS key with SHA-384",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PrivateAccessTokenIssuerOut": {
+        "properties": {
+          "directory_url": {
+            "type": "string"
+          },
+          "issuer_name": {
+            "type": "string"
+          },
+          "token_key": {
+            "description": "base64url, padded",
+            "type": "string"
+          }
+        },
+        "required": [
+          "issuer_name"
         ],
         "type": "object"
       },
@@ -948,6 +1143,29 @@
         ],
         "type": "object"
       },
+      "SDKEventConsumeOut": {
+        "properties": {
+          "consumed_at": {
+            "description": "When it was consumed, RFC 3339",
+            "format": "date-time",
+            "type": "string"
+          },
+          "first": {
+            "description": "Always true: a later consume is answered 409 event_already_consumed",
+            "type": "boolean"
+          },
+          "request_id": {
+            "description": "The event consumed",
+            "type": "string"
+          }
+        },
+        "required": [
+          "consumed_at",
+          "first",
+          "request_id"
+        ],
+        "type": "object"
+      },
       "SDKEventOut": {
         "properties": {
           "agent": {
@@ -964,6 +1182,14 @@
           },
           "asn_name": {
             "type": "string"
+          },
+          "consumed_at": {
+            "description": "When the event was first consumed with POST /events/{request_id}/consume. Absent while it has not been",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "country_code": {
             "type": "string"
@@ -1183,6 +1409,21 @@
             "description": "The human-readable stem, such as fly_pk_production",
             "type": "string"
           },
+          "private_access_token_issuer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PrivateAccessTokenIssuerOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Prototype: the project's token issuer, on the answer to an origins update"
+          },
+          "private_access_tokens": {
+            "description": "Prototype: whether a capable Safari is asked for a Private Access Token when the page requests a web ticket",
+            "type": "boolean"
+          },
           "project_id": {
             "type": "string"
           },
@@ -1203,6 +1444,11 @@
           "status": {
             "description": "active or revoked",
             "type": "string"
+          },
+          "web_ticket_pow_bits": {
+            "description": "Proof of work, in leading zero bits, the key's web freshness tickets ask for; 0 is none",
+            "format": "int64",
+            "type": "integer"
           }
         },
         "required": [
@@ -1218,9 +1464,11 @@
           "last4",
           "name",
           "prefix",
+          "private_access_tokens",
           "project_id",
           "require_attestation",
-          "status"
+          "status",
+          "web_ticket_pow_bits"
         ],
         "type": "object"
       },
@@ -1338,21 +1586,6 @@
         "required": [
           "signal",
           "weights"
-        ],
-        "type": "object"
-      },
-      "SupplementOut": {
-        "properties": {
-          "duplicate": {
-            "description": "The identical supplement was accepted before",
-            "type": "boolean"
-          },
-          "request_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "request_id"
         ],
         "type": "object"
       },
@@ -1568,6 +1801,29 @@
         },
         "required": [
           "erasures"
+        ],
+        "type": "object"
+      },
+      "WebTicketOut": {
+        "properties": {
+          "expires_at": {
+            "description": "When the ticket stops being accepted, RFC 3339 UTC",
+            "format": "date-time",
+            "type": "string"
+          },
+          "pow_bits": {
+            "description": "Present when the key asks for proof of work: the leading zero bits ticket_pow must produce",
+            "format": "int64",
+            "type": "integer"
+          },
+          "ticket": {
+            "description": "Unpadded base64url ticket, sent as ticket on the next report",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expires_at",
+          "ticket"
         ],
         "type": "object"
       },
@@ -2075,9 +2331,118 @@
         "x-title": "Get an event"
       }
     },
+    "/api/v1/events/{request_id}/consume": {
+      "post": {
+        "description": "Marks one identification event as consumed, atomically and once per organization, so a request ID handed from a page to your backend backs one decision only. The first call answers `200` with `first: true`; every later call answers `409 event_already_consumed`, with the first consume's time in the error's `details` entry for the field `consumed_at`. Read and check the event before you consume it. The flag is kept with the event and erased with it.",
+        "operationId": "markEventConsumedOnce",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SDKEventConsumeOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable secret SDK key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The organization is suspended or closed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "`event_not_found`: no event with that request ID in this key's environment, or it is older than 30 days. `event_pending`: the identification is still being recorded; retry after the `Retry-After` seconds"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "`event_already_consumed`: consumed before; `details[0]` is `{\"field\": \"consumed_at\", \"issue\": \"<RFC 3339>\"}`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request could not be validated."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "`events_unavailable`: retry after the `Retry-After` seconds"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "secretKey": []
+          }
+        ],
+        "summary": "Mark an event consumed, once",
+        "tags": [
+          "Server API"
+        ],
+        "x-category": "Server API",
+        "x-title": "Consume an event"
+      }
+    },
     "/api/v1/events/{request_id}/device-check": {
       "put": {
-        "description": "Spends the DeviceCheck token held for this iOS event, once, to set bit0, bit1 or both with Apple, using your project's own Apple key. A bit left out keeps its value. The bits mean what you decide; Fingerly never reads them. Tokens are held for one hour, only for events whose App Attest evidence covered them, and only when DeviceCheck is switched on for the project's Apple credential.",
+        "description": "Spends the write DeviceCheck token held for this iOS event, once, to set bit0, bit1 or both with Apple, using your project's own Apple key. A bit left out keeps its value. The bits mean what you decide; Fingerly never reads them. Apple answers a write with no previous value; the event's read token, spent by the query route, is separate, so one identification supports one read and one write. Tokens are held for one hour, only for events whose App Attest evidence covered them, and only when DeviceCheck is switched on for the project's Apple credential. After a `503`, retry with the same bits: a token kept for a retry accepts only the request it was first used for.",
         "operationId": "setDeviceDevicecheckBits",
         "parameters": [
           {
@@ -2154,7 +2519,7 @@
                 }
               }
             },
-            "description": "`device_check_not_held`: no token is held for that event"
+            "description": "`device_check_not_held`: no write token is held for that event"
           },
           "409": {
             "content": {
@@ -2164,7 +2529,7 @@
                 }
               }
             },
-            "description": "`device_check_spent`, `device_check_busy` or `credential_unavailable`"
+            "description": "`device_check_spent`: already used, or a retry that is not the first request; `device_check_busy` or `credential_unavailable`"
           },
           "422": {
             "content": {
@@ -2212,7 +2577,7 @@
     },
     "/api/v1/events/{request_id}/device-check/query": {
       "post": {
-        "description": "Spends the DeviceCheck token held for this iOS event, once, to read the device's two bits from Apple. A token spent on a read cannot also write; to mark a device, write instead.",
+        "description": "Spends the read DeviceCheck token held for this iOS event, once, to read the device's two bits from Apple. Apple asks for each token to be used once, so the event holds a second token for the write route: to read and then mark a device, read and write on the same identification. After a `503`, retry the read: a token kept for a retry accepts only the request it was first used for.",
         "operationId": "readDeviceDevicecheckBits",
         "parameters": [
           {
@@ -2263,7 +2628,7 @@
                 }
               }
             },
-            "description": "`device_check_not_held`: no token is held for that event"
+            "description": "`device_check_not_held`: no read token is held for that event"
           },
           "409": {
             "content": {
@@ -2273,7 +2638,7 @@
                 }
               }
             },
-            "description": "`device_check_spent`, `device_check_busy` or `credential_unavailable`"
+            "description": "`device_check_spent`: already used, or a retry that is not the first request; `device_check_busy` or `credential_unavailable`"
           },
           "422": {
             "content": {
@@ -2283,7 +2648,7 @@
                 }
               }
             },
-            "description": "The request could not be validated."
+            "description": "`apple_rejected`: Apple rejected the token; `apple_status` says how"
           },
           "503": {
             "content": {
@@ -2317,134 +2682,6 @@
         ],
         "x-category": "Server API",
         "x-title": "Read an event's DeviceCheck bits"
-      }
-    },
-    "/api/v1/events/{request_id}/supplement": {
-      "post": {
-        "description": "Attaches the signals a browser collects after its initial budget to an identification that has already been answered. It never changes the visitor, the score, billing or webhooks. The JavaScript SDK sends it automatically. Resending the same report is answered as a duplicate.",
-        "operationId": "submitDeferredReport",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "request_id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "consent": {
-                    "description": "The SDK's consent state; must be granted, or the request is refused with consent_required",
-                    "type": "string"
-                  },
-                  "sdk": {
-                    "$ref": "#/components/schemas/SDKInfo",
-                    "description": "Which SDK collected these signals"
-                  },
-                  "signals": {
-                    "additionalProperties": {},
-                    "description": "A report containing only the deferred tier",
-                    "type": "object"
-                  },
-                  "token": {
-                    "description": "The deferred_token returned by identify",
-                    "type": "string"
-                  }
-                },
-                "type": "object"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SupplementOut"
-                }
-              }
-            },
-            "description": "Accepted"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "No usable x-api-key header was presented"
-          },
-          "402": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "The organization this key belongs to is not accepting traffic"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "A different deferred report was already accepted for this request"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "The request could not be validated."
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "The report could not be accepted just now"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "An unexpected error occurred."
-          }
-        },
-        "security": [
-          {
-            "publicKey": []
-          }
-        ],
-        "summary": "Submit a deferred report",
-        "tags": [
-          "Client API"
-        ],
-        "x-category": "Client API",
-        "x-title": "Submit a deferred report"
       }
     },
     "/api/v1/identify": {
@@ -2491,6 +2728,16 @@
               }
             },
             "description": "The organization this key belongs to is not accepting traffic"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The Idempotency-Key was reused with a different payload, or the original request is still in progress"
           },
           "413": {
             "content": {
@@ -2561,7 +2808,7 @@
     },
     "/api/v1/ingest": {
       "post": {
-        "description": "The one URL the client SDKs and every first-party proxy post to. A body with a `token` is a deferred report and is answered `202` with `request_id` and `duplicate`, exactly as the deferred report route answers. Any other body is an identification and is answered `200` exactly as the identify route answers.\n\nIt exists so a proxy can forward everything it receives to a single path, and so the SDK can post both calls to one path of the customer's choosing, with nothing appended that a content blocker could match across sites.\n\nThe `X-Request-Id` response header names this HTTP exchange, for support and logs. It is not the `request_id` in the body, which names the identification and is what `GET /events/{request_id}` reads.",
+        "description": "The one URL the client SDKs and every first-party proxy post to. Forwards the single-pass v3 identification envelope and answers `200` with the verdict, exactly as the identify route answers.\n\nIt exists so a proxy can forward everything it receives to a single path of the customer's choosing, with nothing appended that a content blocker could match across sites. An `Idempotency-Key` header is required on every call.\n\nThe `X-Request-Id` response header names this HTTP exchange, for support and logs. It is not the `request_id` in the body, which names the identification and is what `GET /events/{request_id}` reads.",
         "operationId": "submitFromClientSdk",
         "requestBody": {
           "content": {
@@ -2584,16 +2831,6 @@
             },
             "description": "OK"
           },
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "The deferred report was accepted"
-          },
           "401": {
             "content": {
               "application/json": {
@@ -2613,6 +2850,16 @@
               }
             },
             "description": "The organization this key belongs to is not accepting traffic"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The Idempotency-Key was reused with a different payload, or the original request is still in progress"
           },
           "413": {
             "content": {
@@ -5333,7 +5580,7 @@
                     "type": "array"
                   },
                   "allowed_android_signers": {
-                    "description": "SHA-256 signing certificate digests, 64 hex characters",
+                    "description": "SHA-256 signing certificate digests, 64 hex characters (colon separators accepted). Required alongside allowed_android_packages in production or when require_attestation is true",
                     "items": {
                       "type": "string"
                     },
@@ -5365,8 +5612,11 @@
                     ]
                   },
                   "hide_client_score": {
-                    "description": "Withhold suspect_score and suspect_level from a browser, an app, a proxy and a hosted domain. Defaults to false",
-                    "type": "boolean"
+                    "description": "Withhold suspect_score and suspect_level from a browser, an app, a proxy and a hosted domain. Defaults to true for a public key and false for a secret key",
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
                   },
                   "kind": {
                     "description": "public or secret",
@@ -5375,6 +5625,13 @@
                   "name": {
                     "description": "What the key is called. The only part a person can recognise once the secret is masked",
                     "type": "string"
+                  },
+                  "require_attestation": {
+                    "description": "Refuse native reports whose hardware attestation did not verify",
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
                   }
                 },
                 "type": "object"
@@ -5503,7 +5760,7 @@
                     "type": "array"
                   },
                   "allowed_android_signers": {
-                    "description": "SHA-256 signing certificate digests, 64 hex characters. Empty means not configured",
+                    "description": "SHA-256 signing certificate digests, 64 hex characters (colon separators accepted). Required alongside allowed_android_packages in production or when require_attestation is true",
                     "items": {
                       "type": "string"
                     },
@@ -5794,6 +6051,32 @@
                       "type": "string"
                     },
                     "type": "array"
+                  },
+                  "private_access_token_issuer": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/PrivateAccessTokenIssuerIn"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Prototype: the token issuer of the key's whole project. Leave out to keep it; send an empty object to clear it"
+                  },
+                  "private_access_tokens": {
+                    "description": "Prototype: ask Safari on iOS 16+ and macOS 13+ for a Private Access Token when the page requests a web ticket. Needs a public key in a project that names a token issuer. Leave out to keep the current setting",
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "web_ticket_pow_bits": {
+                    "description": "Proof of work the key's web freshness tickets ask for, 0 (off) to 22 leading zero bits. Leave out to keep the current setting",
+                    "format": "int64",
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
                   }
                 },
                 "type": "object"

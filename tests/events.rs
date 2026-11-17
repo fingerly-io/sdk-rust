@@ -10,6 +10,7 @@ use fingerly::{Error, EventListParams, Fingerly, SuspectLevel};
 fn client(server: &TestServer) -> Fingerly {
     Fingerly::builder(SECRET_KEY)
         .endpoint(&server.base_url)
+        .allow_insecure_loopback(true)
         .build()
         .unwrap()
 }

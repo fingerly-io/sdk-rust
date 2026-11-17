@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use common::{Canned, TestServer, SECRET_KEY};
-use fingerly::{Error, EventListParams, Fingerly, WebhookVerifier};
+use fingerly::{signals, Attestation, Error, Event, EventListParams, Fingerly, WebhookVerifier};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -58,6 +58,7 @@ async fn serving(fixture: &ResponseFixture) -> TestServer {
 fn client(server: &TestServer) -> Fingerly {
     Fingerly::builder(SECRET_KEY)
         .endpoint(&server.base_url)
+        .allow_insecure_loopback(true)
         .build()
         .unwrap()
 }
@@ -136,6 +137,25 @@ async fn reads_every_event_fixture() {
             "{}",
             fixture.name
         );
+        assert_eq!(
+            event.reason.as_deref(),
+            fixture.body.get("reason").and_then(|r| r.as_str()),
+            "{}",
+            fixture.name
+        );
+        assert_eq!(
+            event.is_identifiable(),
+            !event.visitor_id.is_empty(),
+            "{}",
+            fixture.name
+        );
+        if event.document.is_some() {
+            let parsed = event
+                .parse_document()
+                .unwrap_or_else(|error| panic!("{}: {error}", fixture.name))
+                .expect("parsed document");
+            assert_eq!(parsed.request_id, event.request_id, "{}", fixture.name);
+        }
         // Whatever this build did not model is still reachable.
         assert_eq!(event.raw, fixture.body, "{}", fixture.name);
     }
@@ -276,4 +296,177 @@ fn verifies_every_webhook_fixture() {
             Some(&stale.timestamp),
             Some(&stale.signature)
         ));
+}
+
+#[tokio::test]
+async fn v3_openapi_and_models_match_single_path_contract() {
+    let raw = std::fs::read(contract_dir().join("openapi.json")).expect("read openapi.json");
+    let openapi: serde_json::Value = serde_json::from_slice(&raw).expect("decode openapi.json");
+
+    let paths = openapi["paths"].as_object().expect("openapi paths");
+    assert!(paths.contains_key("/api/v1/ingest"));
+    assert!(!paths.contains_key("/api/v1/events/{request_id}/supplement"));
+
+    let schemas = openapi["components"]["schemas"]
+        .as_object()
+        .expect("openapi schemas");
+    assert!(schemas.contains_key("AttestEnvelope"));
+    assert!(!schemas.contains_key("SupplementOut"));
+
+    let event_props = schemas["SDKEventOut"]["properties"]
+        .as_object()
+        .expect("SDKEventOut properties");
+    assert!(!event_props.contains_key("supplements"));
+    assert!(!event_props.contains_key("deferred_token"));
+
+    let v3_signals = [
+        signals::ATTESTATION_FAILED,
+        signals::DEVICE_INCONSISTENT,
+        signals::REPORT_INCOMPLETE,
+        signals::TAMPERING,
+        signals::CUSTOM_ROOT_CA,
+        signals::SECONDARY_USER_PROFILE,
+    ];
+    assert_eq!(signals::ATTESTATION_DOWNGRADE, "attestation_downgrade");
+    assert_eq!(signals::PROBE_ERRORS, "probe_errors");
+    assert_eq!(signals::FETCH_METADATA_MISSING, "fetch_metadata_missing");
+    assert_eq!(signals::WEB_TICKET_MISSING, "web_ticket_missing");
+    assert_eq!(signals::WEB_TICKET_INVALID, "web_ticket_invalid");
+    let payload = serde_json::json!({
+        "request_id": "req_v3_unidentifiable",
+        "visitor_id": "",
+        "occurred_at": "2026-11-16T08:00:00Z",
+        "state": "enriched",
+        "environment": "production",
+        "platform": "android",
+        "sdk_platform": "react-native-android",
+        "sdk_version": "0.3.0",
+        "suspect_score": 88,
+        "suspect_level": "high",
+        "triggers": [
+            {"signal": signals::ATTESTATION_FAILED, "weight": 35, "confidence": "high"},
+            {"signal": signals::DEVICE_INCONSISTENT, "weight": 20, "confidence": "high"},
+            {"signal": signals::REPORT_INCOMPLETE, "weight": 15, "confidence": "medium"},
+            {"signal": signals::TAMPERING, "weight": 10, "confidence": "high"},
+            {"signal": signals::CUSTOM_ROOT_CA, "weight": 4, "confidence": "medium"},
+            {"signal": signals::SECONDARY_USER_PROFILE, "weight": 4, "confidence": "low"}
+        ],
+        "has_document": true,
+        "document": {
+            "schema": 1,
+            "request_id": "req_v3_unidentifiable",
+            "occurred_at": "2026-11-16T08:00:00Z",
+            "sdk": {"platform": "react-native-android", "version": "0.3.0"},
+            "attestation": {
+                "state": "failed",
+                "platform": "android",
+                "status": "invalid",
+                "reason": "bootloader_unlocked",
+                "mode": "android_key_register",
+                "chain_length": 4,
+                "attestation_security_level": "trusted_environment",
+                "keymint_security_level": "trusted_environment",
+                "device_locked": false,
+                "verified_boot_state": "orange",
+                "revocation_checked": true,
+                "package_bound": true,
+                "signer_bound": false
+            },
+            "risk": {
+                "platform": "android",
+                "score": 88,
+                "level": "high",
+                "threshold": 50,
+                "source": "default",
+                "triggers": [
+                    {
+                        "signal": signals::ATTESTATION_FAILED,
+                        "weight": 35,
+                        "confidence": "high",
+                        "reason": "bootloader_unlocked"
+                    }
+                ]
+            }
+        }
+    });
+
+    let server = TestServer::always(Canned::json(200, payload.to_string())).await;
+    let event: Event = client(&server)
+        .events()
+        .get("req_v3_unidentifiable")
+        .await
+        .expect("decode v3 unidentifiable event");
+
+    assert_eq!(event.visitor_id, "");
+    assert!(!event.is_identifiable());
+    assert_eq!(event.score(), Some(88));
+    let seen_signals: Vec<&str> = event.triggers.iter().map(|t| t.signal.as_str()).collect();
+    assert_eq!(seen_signals, v3_signals);
+
+    let doc = event
+        .parse_document()
+        .expect("parse v3 document")
+        .expect("document present");
+    assert_eq!(doc.sdk.platform, "react-native-android");
+    let attestation = doc.attestation.expect("attestation present");
+    assert_eq!(attestation.state, "failed");
+    assert_eq!(attestation.status, "invalid");
+    assert_eq!(attestation.platform.as_deref(), Some("android"));
+    assert_eq!(attestation.reason.as_deref(), Some("bootloader_unlocked"));
+    assert_eq!(attestation.device_locked, Some(false));
+    assert!(attestation.revocation_checked);
+    assert!(attestation.package_bound);
+    assert!(!attestation.signer_bound);
+    assert_eq!(attestation.attest_skipped, None);
+    assert!(!attestation.downgrade);
+}
+
+#[test]
+fn attestation_reads_attest_skipped_and_downgrade() {
+    let attestation: Attestation = serde_json::from_value(serde_json::json!({
+        "state": "not_attested",
+        "platform": "ios",
+        "status": "absent",
+        "attest_skipped": "timeout",
+        "downgrade": true
+    }))
+    .expect("decode attestation");
+    assert_eq!(attestation.attest_skipped.as_deref(), Some("timeout"));
+    assert!(attestation.downgrade);
+}
+
+/// The DeviceCheck routes and shapes the client calls are the ones the
+/// contract publishes.
+#[test]
+fn device_check_routes_match_the_contract() {
+    let raw = std::fs::read(contract_dir().join("openapi.json")).expect("read openapi.json");
+    let openapi: serde_json::Value = serde_json::from_slice(&raw).expect("decode openapi.json");
+    let paths = &openapi["paths"];
+    let query = &paths["/api/v1/events/{request_id}/device-check/query"]["post"];
+    let write = &paths["/api/v1/events/{request_id}/device-check"]["put"];
+    assert!(query.is_object() && write.is_object());
+    assert!(query.get("requestBody").is_none());
+    for operation in [query, write] {
+        for status in ["200", "404", "409", "422", "503"] {
+            assert!(operation["responses"][status].is_object(), "{status}");
+        }
+    }
+    let body = &write["requestBody"]["content"]["application/json"]["schema"]["properties"];
+    assert!(body["bit0"].is_object() && body["bit1"].is_object());
+
+    let schemas = &openapi["components"]["schemas"];
+    let mut required: Vec<&str> = schemas["DeviceCheckQueryOut"]["required"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    required.sort_unstable();
+    assert_eq!(required, ["bit0", "bit1", "found"]);
+    assert!(schemas["DeviceCheckQueryOut"]["properties"]["last_update"].is_object());
+    let out = schemas["DeviceCheckWriteOut"]["properties"]
+        .as_object()
+        .unwrap();
+    assert_eq!(out.len(), 2);
+    assert!(out.contains_key("bit0") && out.contains_key("bit1"));
 }

@@ -24,6 +24,9 @@ pub struct ApiError {
     /// `Retry-After` header, or `None` when it sent none. The SDK never
     /// retries a read itself.
     pub retry_after: Option<u64>,
+    /// Read through [`consumed_at`](Self::consumed_at). Boxed so the error
+    /// stays small enough to return by value.
+    pub(crate) consumed_at: Option<Box<str>>,
 }
 
 impl fmt::Display for ApiError {
@@ -50,6 +53,40 @@ impl ApiError {
     /// this key's environment, or the event is past retention.
     pub fn is_not_found(&self) -> bool {
         self.status == 404 && self.code.as_deref() == Some("event_not_found")
+    }
+
+    /// True for `409 event_already_consumed`: the event was consumed before,
+    /// at [`consumed_at`](Self::consumed_at).
+    pub fn is_already_consumed(&self) -> bool {
+        self.is(409, "event_already_consumed")
+    }
+
+    /// When the event was first consumed, as RFC 3339, for
+    /// `409 event_already_consumed`. `None` for every other error, or when the
+    /// API sent no time.
+    pub fn consumed_at(&self) -> Option<&str> {
+        self.consumed_at.as_deref()
+    }
+
+    /// Apple's HTTP status for `422 apple_rejected`, from the `apple_status`
+    /// entry of [`details`](Self::details).
+    pub fn apple_status(&self) -> Option<u16> {
+        if self.status != 422 || self.code.as_deref() != Some("apple_rejected") {
+            return None;
+        }
+        self.details
+            .as_ref()?
+            .as_array()?
+            .iter()
+            .find(|detail| detail.get("field").and_then(|v| v.as_str()) == Some("apple_status"))?
+            .get("issue")?
+            .as_str()?
+            .parse()
+            .ok()
+    }
+
+    fn is(&self, status: u16, code: &str) -> bool {
+        self.status == status && self.code.as_deref() == Some(code)
     }
 }
 
@@ -144,9 +181,79 @@ impl Error {
         matches!(self, Error::Api(api) if api.is_pending())
     }
 
+    /// True when the event was consumed before (`409 event_already_consumed`);
+    /// see [`ApiError::is_already_consumed`].
+    /// [`consumed_at`](Self::consumed_at) says when.
+    pub fn is_event_already_consumed(&self) -> bool {
+        matches!(self, Error::Api(api) if api.is_already_consumed())
+    }
+
+    /// When the event was first consumed, as RFC 3339, for
+    /// `409 event_already_consumed`. `None` for any other error, or when the
+    /// API sent no time.
+    pub fn consumed_at(&self) -> Option<&str> {
+        match self {
+            Error::Api(api) if api.is_already_consumed() => api.consumed_at(),
+            _ => None,
+        }
+    }
+
     /// True when an SDK deadline elapsed.
     pub fn is_timeout(&self) -> bool {
         matches!(self, Error::Timeout)
+    }
+
+    fn is_api(&self, status: u16, code: &str) -> bool {
+        matches!(self, Error::Api(api) if api.is(status, code))
+    }
+
+    /// True for `404 device_check_not_held`: no DeviceCheck token is held for
+    /// the event. Decide without the bits; it is not a verdict.
+    pub fn is_device_check_not_held(&self) -> bool {
+        self.is_api(404, "device_check_not_held")
+    }
+
+    /// True for `409 device_check_spent`: the token was already used, or this
+    /// call is a retry that does not repeat the first request.
+    pub fn is_device_check_spent(&self) -> bool {
+        self.is_api(409, "device_check_spent")
+    }
+
+    /// True for `409 device_check_busy`: another call is using the token.
+    pub fn is_device_check_busy(&self) -> bool {
+        self.is_api(409, "device_check_busy")
+    }
+
+    /// True for `409 credential_unavailable`: the project's Apple key is
+    /// missing, refused by Apple, or has DeviceCheck off. The token is kept.
+    pub fn is_credential_unavailable(&self) -> bool {
+        self.is_api(409, "credential_unavailable")
+    }
+
+    /// True for `422 bits_required`: a write named neither bit.
+    pub fn is_bits_required(&self) -> bool {
+        self.is_api(422, "bits_required")
+    }
+
+    /// True for `422 apple_rejected`: Apple rejected the token, which is used
+    /// up. [`apple_status`](Self::apple_status) says how.
+    pub fn is_apple_rejected(&self) -> bool {
+        self.is_api(422, "apple_rejected")
+    }
+
+    /// Apple's HTTP status, for `422 apple_rejected`.
+    pub fn apple_status(&self) -> Option<u16> {
+        match self {
+            Error::Api(api) => api.apple_status(),
+            _ => None,
+        }
+    }
+
+    /// True for `503 device_check_unavailable`: Apple or the API's storage
+    /// could not answer, and the token is kept for a retry of the same
+    /// request within the hour.
+    pub fn is_device_check_unavailable(&self) -> bool {
+        self.is_api(503, "device_check_unavailable")
     }
 }
 

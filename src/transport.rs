@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use crate::config::{
-    normalize_api_version, normalize_origin, parse_key, positive_duration, KeyKind,
+    normalize_api_origin, normalize_api_version, parse_key, positive_duration, KeyKind,
     DEFAULT_ENDPOINT,
 };
 use crate::errors::{ApiError, Error, Result};
@@ -20,6 +20,16 @@ const MAX_ERROR_BODY: usize = 1 << 20;
 /// Caps a successful answer. An event is a few kilobytes and a page of them
 /// well under a megabyte.
 const MAX_RESPONSE_BODY: usize = 4 << 20;
+
+/// Retries after the first attempt to spend a DeviceCheck token.
+const SPEND_RETRIES: u32 = 2;
+
+/// The wait before a spend retry, times the retry's number, unless the API
+/// sent `Retry-After`.
+const SPEND_BACKOFF: Duration = Duration::from_millis(250);
+
+/// The longest a spend retry waits, whatever `Retry-After` asks for.
+const MAX_SPEND_WAIT: Duration = Duration::from_secs(2);
 
 /// Every request carries a deadline that covers receiving the body, refuses
 /// redirects so the key is never replayed to another host, and reports
@@ -56,12 +66,17 @@ impl Transport {
     pub(crate) fn new(
         secret_key: String,
         endpoint: Option<String>,
+        allow_insecure_loopback: bool,
         api_version: Option<String>,
         timeout: Option<Duration>,
         builder: Option<reqwest::ClientBuilder>,
     ) -> Result<Self> {
         parse_key(&secret_key, KeyKind::Secret)?;
-        let origin = normalize_origin(&endpoint.unwrap_or_else(|| DEFAULT_ENDPOINT.to_owned()))?;
+        let origin = normalize_api_origin(
+            endpoint.as_deref().unwrap_or(DEFAULT_ENDPOINT),
+            allow_insecure_loopback,
+            "endpoint",
+        )?;
         let api_version = normalize_api_version(api_version.as_deref().unwrap_or("v1"))?;
         let timeout = positive_duration(timeout.unwrap_or(DEFAULT_TIMEOUT), "timeout")?;
 
@@ -95,6 +110,61 @@ impl Transport {
         }
     }
 
+    /// Performs one POST without a body and parses its JSON answer. Never
+    /// retries, under the same deadline as a read.
+    pub(crate) async fn post_json(&self, path: &str) -> Result<serde_json::Value> {
+        let request = self.http.post(format!("{}{path}", self.base_url));
+        match tokio::time::timeout(self.timeout, self.send(request)).await {
+            Ok(result) => result,
+            Err(_) => Err(Error::Timeout),
+        }
+    }
+
+    /// Spends a held DeviceCheck token: one POST or PUT with an optional JSON
+    /// body, each attempt under its own deadline.
+    ///
+    /// It retries only an answer that leaves the token held (`503`) or no
+    /// answer at all (a timeout or a connection failure), and every retry is
+    /// the identical request: the API accepts a retry of a held token only
+    /// when it repeats the first request. Nothing else is retried.
+    pub(crate) async fn spend_json(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<Vec<u8>>,
+    ) -> Result<serde_json::Value> {
+        let url = format!("{}{path}", self.base_url);
+        let mut attempt = 0;
+        loop {
+            let mut request = self.http.request(method.clone(), &url);
+            if let Some(body) = &body {
+                request = request
+                    .header("content-type", "application/json")
+                    .body(body.clone());
+            }
+            let result = match tokio::time::timeout(self.timeout, self.send(request)).await {
+                Ok(result) => result,
+                Err(_) => Err(Error::Timeout),
+            };
+            let retryable = match &result {
+                Err(Error::Api(api)) => api.status == 503,
+                Err(Error::Timeout | Error::Connection { .. }) => true,
+                _ => false,
+            };
+            if !retryable || attempt >= SPEND_RETRIES {
+                return result;
+            }
+            let wait = match &result {
+                Err(Error::Api(api)) => api.retry_after.map(Duration::from_secs),
+                _ => None,
+            }
+            .unwrap_or(SPEND_BACKOFF * (attempt + 1))
+            .min(MAX_SPEND_WAIT);
+            attempt += 1;
+            tokio::time::sleep(wait).await;
+        }
+    }
+
     /// Sends one request and reads its whole body inside the caller's deadline.
     async fn send(&self, request: reqwest::RequestBuilder) -> Result<serde_json::Value> {
         let response = request
@@ -102,7 +172,7 @@ impl Transport {
             .header("accept", "application/json")
             .send()
             .await
-            .map_err(|error| Error::connection(self.redact(&error.to_string())))?;
+            .map_err(|error| Error::connection(failure_kind(&error)))?;
 
         let status = response.status();
         let request_id = header_text(&response, "x-request-id");
@@ -137,7 +207,7 @@ impl Transport {
         while let Some(chunk) = response
             .chunk()
             .await
-            .map_err(|error| Error::connection(self.redact(&error.to_string())))?
+            .map_err(|error| Error::connection(failure_kind(&error)))?
         {
             if body.len() + chunk.len() > MAX_RESPONSE_BODY {
                 return Err(too_large());
@@ -158,6 +228,7 @@ impl Transport {
             details: None,
             request_id: None,
             retry_after: None,
+            consumed_at: None,
         };
 
         let envelope: serde_json::Value =
@@ -168,7 +239,13 @@ impl Transport {
                 Err(_) => return error,
             };
 
-        if let Some(code) = envelope.pointer("/error/code").and_then(|v| v.as_str()) {
+        // The standard envelope nests the code; a bare `{"code": …}` body is
+        // read too.
+        if let Some(code) = envelope
+            .pointer("/error/code")
+            .or_else(|| envelope.get("code"))
+            .and_then(|v| v.as_str())
+        {
             error.code = Some(self.redact(code));
         }
         if let Some(details) = envelope.pointer("/error/details") {
@@ -178,12 +255,47 @@ impl Transport {
         if let Some(request_id) = envelope.get("request_id").and_then(|v| v.as_str()) {
             error.request_id = Some(self.redact(request_id));
         }
+        if error.is_already_consumed() {
+            error.consumed_at = consumed_at(&envelope).map(|at| self.redact(at).into());
+        }
         error
     }
 
     /// Strips the secret key from anything an error may carry to logs.
     fn redact(&self, value: &str) -> String {
         value.replace(&self.secret_key, "[redacted]")
+    }
+}
+
+/// The time an `event_already_consumed` answer names: a top-level
+/// `consumed_at`, one inside `error`, or a `details` entry for that field.
+fn consumed_at(envelope: &serde_json::Value) -> Option<&str> {
+    envelope
+        .get("consumed_at")
+        .or_else(|| envelope.pointer("/error/consumed_at"))
+        .and_then(|v| v.as_str())
+        .or_else(|| {
+            envelope
+                .pointer("/error/details")?
+                .as_array()?
+                .iter()
+                .find(|detail| detail.get("field").and_then(|v| v.as_str()) == Some("consumed_at"))?
+                .get("issue")?
+                .as_str()
+        })
+}
+
+/// Names the kind of a connection failure, never the URL, host or port: the
+/// message ends up in logs that the API address is not for.
+fn failure_kind(error: &reqwest::Error) -> &'static str {
+    if error.is_timeout() {
+        "the request timed out"
+    } else if error.is_connect() {
+        "could not connect to the API"
+    } else if error.is_body() || error.is_decode() {
+        "the answer broke off"
+    } else {
+        "the request failed"
     }
 }
 
@@ -246,16 +358,20 @@ fn parse_imf_fixdate(value: &str) -> Option<u64> {
     {
         return None;
     }
-    // Days from the civil date, after Howard Hinnant's algorithm.
+    let days = days_from_civil(year, month, day as i64);
+    let seconds = days * 86_400 + (hour * 3600 + minute * 60 + second) as i64;
+    u64::try_from(seconds).ok()
+}
+
+/// Days since the Unix epoch of a proleptic Gregorian date, after Howard
+/// Hinnant's algorithm. `month` is 1 to 12.
+pub(crate) fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     let y = if month <= 2 { year - 1 } else { year };
     let era = y.div_euclid(400);
     let yoe = y - era * 400;
-    let m = month as i64;
-    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + day as i64 - 1;
+    let doy = (153 * (if month > 2 { month - 3 } else { month + 9 }) + 2) / 5 + day - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146_097 + doe - 719_468;
-    let seconds = days * 86_400 + (hour * 3600 + minute * 60 + second) as i64;
-    u64::try_from(seconds).ok()
+    era * 146_097 + doe - 719_468
 }
 
 #[cfg(test)]

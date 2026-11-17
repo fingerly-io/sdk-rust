@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.3.0
+
+- Added `events().verify(request_id, VerifyOptions)`, which reads an event and
+  checks it exists, is recent (`max_age_seconds`, 300 by default), carries the
+  expected `tag`, is identifiable and scored, then consumes it once, returning
+  a `Verification` with a `VerifyReason`; and `events().consume(request_id)`,
+  returning `ConsumedEvent`, with `Error::is_event_already_consumed()` and
+  `Error::consumed_at()` for `409 event_already_consumed`.
+- `Fingerly::device_check()` reads and writes the DeviceCheck bits of the
+  device behind an iOS event: `query(request_id)` returns `DeviceCheckBits`,
+  `write(request_id, DeviceCheckWrite)` returns `DeviceCheckWriteResult`. A
+  `503`, a timeout or a connection failure is retried twice with the identical
+  request, and `Error` has a predicate for each DeviceCheck code, with
+  `apple_status()` for `apple_rejected`.
+- Refreshed the vendored v3 OpenAPI and contract fixtures, removing retired
+  deferred supplement schemas and routes, and added `Event::reason`,
+  `Event::is_identifiable()`, `Event::parse_document()`, `EventDocument`,
+  `Attestation`, and the `signals` module covering all v3 signal identifiers
+  (`ATTESTATION_FAILED`, `ATTESTATION_DOWNGRADE`, `DEVICE_INCONSISTENT`,
+  `REPORT_INCOMPLETE`, `PROBE_ERRORS`, `FETCH_METADATA_MISSING`,
+  `WEB_TICKET_MISSING`, `WEB_TICKET_INVALID`, `TAMPERING`, `CUSTOM_ROOT_CA`,
+  `SECONDARY_USER_PROFILE`), with `attest_skipped` and
+  `downgrade` on `Attestation`.
+- Updated `FingerlyProxy` to enforce the single-path `proxy.md` relay contract:
+  sanitize-and-restore validation of `x-fingerly-sdk-platform`, rejection with
+  HTTP `400` (`missing_origin`) when both `Origin` and a valid
+  `x-fingerly-sdk-platform` are absent (never synthesising `x-fingerly-origin`),
+  forwarding of `Sec-Fetch-*` and `Sec-CH-UA-*` client metadata headers,
+  optional cross-origin `allowed_origins` CORS handling, and verbatim raw-byte
+  forwarding.
+- `FingerlyProxy` takes only a `proxy_key` and always checks the caller's
+  public key; a secret key is never sent upstream.
+
 ## 0.2.0
 
 - `Event::project_id` exposes the Fingerly project an event belongs to, on

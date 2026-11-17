@@ -72,9 +72,10 @@ Full guide: [docs.fingerly.io/docs/sdks/rust](https://docs.fingerly.io/docs/sdks
 | --- | --- | --- |
 | Read an event after the browser identified a visitor | `Fingerly` and `events().get` / `list` | [Read events](#read-events) |
 | Check a webhook delivery is genuine | `verify_webhook` and `WebhookVerifier` | [Verify webhooks](#verify-webhooks) |
+| Read or set an iOS device's two DeviceCheck bits | `device_check().query` / `write` | [DeviceCheck bits on iOS](#devicecheck-bits-on-ios) |
 | Keep the browser SDK first-party, away from content blockers | `FingerlyProxy`, a `tower::Service` | [First-party proxy](#first-party-proxy-same-origin) |
 
-On this page: [Read events](#read-events) · [Verify webhooks](#verify-webhooks) · [First-party proxy](#first-party-proxy-same-origin) · [Features](#features) · [Requirements](#requirements) · [Development](#development-and-release-preparation) · [Documentation](#documentation) · [Help](#help) · [Licence](#licence)
+On this page: [Read events](#read-events) · [DeviceCheck bits on iOS](#devicecheck-bits-on-ios) · [Verify webhooks](#verify-webhooks) · [First-party proxy](#first-party-proxy-same-origin) · [Features](#features) · [Requirements](#requirements) · [Development](#development-and-release-preparation) · [Documentation](#documentation) · [Help](#help) · [Licence](#licence)
 
 ## Read events
 
@@ -83,6 +84,19 @@ go to `https://api.fingerly.io`; `endpoint` on the builder overrides that for a
 local API. Public, proxy, management, malformed and unsupported keys are
 rejected before network access. Requests do not follow redirects. `get` and
 `list` each perform one request and never retry.
+
+`endpoint` is a bare origin only: `https://host` or `https://host:port`, with
+no path, query, fragment, credentials, whitespace or control byte. Plain HTTP
+is refused, except for `127.0.0.1`, `localhost` or `[::1]` with
+`allow_insecure_loopback(true)`. Neither a construction error nor a connection
+error repeats the endpoint or the key:
+
+```rust
+let fingerly = Fingerly::builder(std::env::var("FINGERLY_SECRET_KEY")?)
+    .endpoint("http://127.0.0.1:8080")
+    .allow_insecure_loopback(true)
+    .build()?;
+```
 
 `Fingerly::new` returns a `Result`, so an invalid key or option fails at
 construction and nothing is sent. The client holds a connection pool; build
@@ -118,7 +132,9 @@ Every call returns `fingerly::Result<T>`, whose error is one `Error` enum:
 and `retry_after`. The secret key is stripped from all of them, and the
 response body is never echoed into a message. `retry_after` is the number of
 seconds from the `Retry-After` header, also reachable as
-`error.retry_after()`; the SDK never retries a read itself.
+`error.retry_after()`; the SDK never retries a read itself. Only a
+DeviceCheck spend is retried, as [DeviceCheck bits on iOS](#devicecheck-bits-on-ios)
+describes.
 
 ```rust
 match fingerly.events().get(&request_id).await {
@@ -173,23 +189,69 @@ If the event is not recorded yet, the error has `is_event_pending()` and a
 past retention.
 
 The archived `document` arrives moments after the event itself, so check
-`has_document` rather than assuming it is there.
+`has_document` rather than assuming it is there, and call
+`event.parse_document()?` to decode it into `Option<EventDocument>` (including
+`Attestation` and `EventRiskReport`). When a submission is unidentifiable
+(`!event.is_identifiable()`, such as insufficient entropy, a genuine embedded
+WebView, or an unmatched high-risk Web payload), `event.visitor_id` is `""`;
+there are no `deferred_token`, `deferred_signals` or `supplements` fields in
+`v: 3`.
+
+The `fingerly::signals` module defines constants for every `v: 3` signal,
+including `signals::ATTESTATION_FAILED` (`"attestation_failed"`),
+`signals::ATTESTATION_DOWNGRADE` (`"attestation_downgrade"`),
+`signals::DEVICE_INCONSISTENT` (`"device_inconsistent"`),
+`signals::REPORT_INCOMPLETE` (`"report_incomplete"`),
+`signals::PROBE_ERRORS` (`"probe_errors"`),
+`signals::FETCH_METADATA_MISSING` (`"fetch_metadata_missing"`),
+`signals::WEB_TICKET_MISSING` (`"web_ticket_missing"`),
+`signals::WEB_TICKET_INVALID` (`"web_ticket_invalid"`),
+`signals::TAMPERING` (`"tampering"`),
+`signals::CUSTOM_ROOT_CA` (`"custom_root_ca"`) and
+`signals::SECONDARY_USER_PROFILE` (`"secondary_user_profile"`). A native
+`Attestation` also carries `attest_skipped` (the app's reason for sending no
+proof) and `downgrade` (the report named an install an attested device owns).
 
 `Event::project_id` names the Fingerly project the event belongs to, as a UUID
 string. It is `None` when the server is older than projects.
 
 ### Verify a backend action
 
-Read the event with a server-only key. Check that its tag matches your action,
-that it is recent, that its environment is correct, and that it was scored.
-Apply your own policy to the server's verdict. Do not authorize an action using
-scores or visitor identifiers supplied by the browser. Tags correlate events;
-they do not replace your application's authentication or replay protection.
-Never put a personal identifier (user ID, email, install ID, advertising ID) in
-a tag: the server keeps tags in long-lived rollups.
+Verify the event with a server-only key, then apply your own policy to the
+server's verdict. Do not authorize an action using scores or visitor
+identifiers supplied by the browser. Tags correlate events; they do not
+replace your application's authentication. Never put a personal identifier
+(user ID, email, install ID, advertising ID) in a tag: the server keeps tags
+in long-lived rollups.
+
+`fingerly.events().verify(request_id, options)` reads the event and runs these
+checks in order, stopping at the first that fails. It returns a
+`Verification` whose `ok` is `false` and whose `reason` names that check, as a
+`VerifyReason` with the wire value from `as_str()`:
+
+1. `not_found`: there is no such event (never issued, or past retention).
+2. `too_old`: it happened more than `max_age_seconds` ago (300 by default),
+   or its `occurred_at` cannot be read. A time in the future passes.
+3. `tag_mismatch`: a `tag` was given and the event's tag is not exactly that.
+   Without a `tag` this check is skipped; an empty `tag` is refused with
+   `Error::Config`.
+4. `unidentifiable`: the event has no visitor ID.
+5. `unscored`: the event has no suspect score.
+6. `already_consumed`: the event was consumed before.
+
+Consuming comes last and happens only when every other check passes, so one
+event backs one decision: the first `verify` consumes it, and any later one
+answers `already_consumed`. Pass `.consume(false)` to check without consuming.
+When everything passes, `ok` is `true`, `reason` is `None` and
+`reason_str()` is `""`. `event` holds the event read, and is `None` only for
+`not_found`.
+
+`verify` never judges the score, the level or the triggers: that policy stays
+with you, on the event it returns. Any other failure is returned as an error,
+including `event_pending`, which is not a verdict.
 
 ```rust
-use fingerly::{Error, Event, Fingerly};
+use fingerly::{signals, Error, Fingerly, VerifyOptions};
 
 enum Verdict {
     Allow,
@@ -199,21 +261,113 @@ enum Verdict {
 }
 
 async fn verify(fingerly: &Fingerly, request_id: &str, tag: &str) -> Result<Verdict, Error> {
-    let event: Event = match fingerly.events().get(request_id).await {
-        Ok(event) => event,
+    let verification = match fingerly
+        .events()
+        .verify(request_id, VerifyOptions::new().tag(tag))
+        .await
+    {
+        Ok(verification) => verification,
         // Not decided yet, not fraud.
         Err(error) if error.is_event_pending() => {
             return Ok(Verdict::Pending(error.retry_after().unwrap_or(2)));
         }
-        Err(error) if error.is_event_not_found() => return Ok(Verdict::Refuse),
         Err(error) => return Err(error),
     };
-    if event.tag.as_deref() != Some(tag) || !event.is_scored() {
+    if !verification.ok {
+        // verification.reason_str() says which check failed.
+        return Ok(Verdict::Refuse);
+    }
+    let Some(event) = verification.event else {
+        return Ok(Verdict::Refuse);
+    };
+    // Your score policy.
+    if event.suspect_level.as_deref() == Some("high") {
+        return Ok(Verdict::Refuse);
+    }
+    if event.triggers.iter().any(|t| t.signal == signals::ATTESTATION_FAILED) {
         return Ok(Verdict::Refuse);
     }
     Ok(Verdict::Allow)
 }
 ```
+
+`fingerly.events().consume(request_id)` consumes an event on its own. The
+first call returns a `ConsumedEvent` (`request_id`, `consumed_at` as RFC 3339,
+`first`); every later one fails with an error for which
+`error.is_event_already_consumed()` is true and `error.consumed_at()` says
+when the first call landed. Like a read, it is never retried.
+
+## DeviceCheck bits on iOS
+
+When DeviceCheck is turned on for your project's Apple key, Fingerly holds the
+DeviceCheck token of an iOS identification for one hour. Your backend spends
+it once, with this client, to read or to set the device's two bits. Apple
+keeps the bits per device for your developer team, and they survive a
+reinstall. They mean what you decide; Fingerly never reads or keeps them.
+
+Apple treats a DeviceCheck token as single-use, so each held token pays for
+one call: a read or a write, never both. To check a device and then mark it,
+such as for a once-per-device free trial, use two identifications:
+
+1. Query on the identification that asks for the trial. If the bit says the
+   device already had one, refuse it.
+2. Otherwise record the grant in your own data, have the app identify again,
+   and write the bit with that second request ID. Until the write lands, your
+   own record of the grant is what stops a second trial.
+
+```rust
+use fingerly::{DeviceCheckWrite, Error, Fingerly};
+
+/// bit0 means "this device has had a free trial". The meaning is yours.
+async fn trial_used_on_device(fingerly: &Fingerly, request_id: &str) -> Result<bool, Error> {
+    match fingerly.device_check().query(request_id).await {
+        Ok(bits) => Ok(bits.found && bits.bit0),
+        // No token for this event: decide without the bits, not a verdict.
+        Err(error) if error.is_device_check_not_held() || error.is_device_check_spent() => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+/// Called with the request ID of the identification after the grant.
+async fn mark_trial_used(fingerly: &Fingerly, request_id: &str) -> Result<bool, Error> {
+    match fingerly
+        .device_check()
+        .write(request_id, DeviceCheckWrite::new().bit0(true))
+        .await
+    {
+        Ok(_) => Ok(true),
+        // Keep your record unmarked and write at the next identification.
+        Err(error) if error.is_device_check_not_held() || error.is_device_check_spent() => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+```
+
+`query` returns `DeviceCheckBits` (`found`, `bit0`, `bit1`, and
+`last_update` as `YYYY-MM` when Apple holds bits). `write` takes the bits to
+set and returns `DeviceCheckWriteResult` with each bit it set; a bit left out
+keeps its value, and a write that names neither bit is refused with
+`Error::Config` before anything is sent.
+
+A `503 device_check_unavailable`, a timeout or a connection failure leaves the
+token held. The client retries those twice, with the identical request,
+because the API accepts a retry of a held token only when it repeats the first
+request: another operation or other bits answer `409 device_check_spent`. If
+it still fails, retry the same call yourself within the hour. Nothing else is
+retried. Each answer has a predicate on `Error`:
+
+| Status | Code | Predicate |
+| --- | --- | --- |
+| 404 | `device_check_not_held` | `is_device_check_not_held()` |
+| 409 | `device_check_spent` | `is_device_check_spent()` |
+| 409 | `device_check_busy` | `is_device_check_busy()` |
+| 409 | `credential_unavailable` | `is_credential_unavailable()` |
+| 422 | `bits_required` | `is_bits_required()` |
+| 422 | `apple_rejected` | `is_apple_rejected()`, with Apple's status in `apple_status()` |
+| 503 | `device_check_unavailable` | `is_device_check_unavailable()` |
+
+Never rely on the bits as the only fraud check, and give customers a way to
+have them reset, which is a write of `false` at their next identification.
 
 ## Verify webhooks
 
@@ -237,7 +391,7 @@ Webhook verification needs neither an HTTP stack nor an async runtime, so
 `default-features = false` leaves a build that pulls in neither:
 
 ```toml
-fingerly = { version = "0.2", default-features = false }
+fingerly = { version = "0.3", default-features = false }
 ```
 
 ## First-party proxy (same-origin)
@@ -255,7 +409,7 @@ serves through `hyper_util`:
 
 ```toml
 [dependencies]
-fingerly = "0.2"
+fingerly = "0.3"
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 ```
@@ -281,9 +435,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|ConnectInfo(peer)| peer.ip().to_string())
                 .unwrap_or_default()
         })
+        .path("/k7x2qm4a")
         .build()?;
 
-    let app = axum::Router::new().route_service("/k7x2qm4a", proxy);
+    // The proxy is the fallback too, so near misses such as `/k7x2qm4a/` get
+    // the proxy's own uncacheable 404 instead of the router's.
+    let app = axum::Router::new()
+        .route_service("/k7x2qm4a", proxy.clone())
+        .fallback_service(proxy);
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
     // ConnectInfo is only there when the app is served with it.
     axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await?;
@@ -324,24 +483,32 @@ its body read yourself, because `timeout` only starts once `handle` is called.
 
 | Rule | Behaviour |
 | --- | --- |
-| Upstream | The browser SDK posts both of its calls to the one path, and the proxy forwards each, as a `POST`, to Fingerly's one ingest URL, `https://api.fingerly.io/api/v1/ingest` (`api_version` changes the `v1`). |
-| Other methods | `405` |
+| Upstream | Browser and proxied native client SDKs post a single `v: 3` identification envelope to the one path, and the proxy forwards its raw request body bytes verbatim, as a `POST`, to Fingerly's one ingest URL, `https://api.fingerly.io/api/v1/ingest` (`api_version` changes the `v1`). |
+| Other methods | `405` for anything other than `POST` (plus `OPTIONS` when `allowed_origins` is configured). |
+| Subpaths | `404` |
 | Event reads | Need a secret key and stay unreachable from a browser by construction. |
-| Public key | The browser must present a public key from the same environment as the proxy key, or the request gets `401`. |
+| Proxy key | Only a proxy key, `fly_px_{production\|staging\|development}_…`; `build()` returns a configuration error when it is missing or malformed. |
+| Public key | The caller's `x-api-key` must be a public key, `fly_pk_…`, from the same environment as the proxy key. A missing header, a public key of another environment, a secret `fly_sk_` key or any other value gets `401` (`text/plain; charset=utf-8`, `Cache-Control: no-store`) with nothing forwarded. |
+| Keys sent upstream | Every request carries the proxy key as `x-fingerly-proxy-key` and the browser's public key as `x-api-key`; a secret key is never sent. |
+| Sanitize and restore | All incoming `x-fingerly-*`, `cookie` and `authorization` headers are stripped, restoring `x-fingerly-sdk-platform` only when it matches an exact lowercase native or bridge platform (`ios`, `android`, `react-native`, `react-native-ios`, `react-native-android`, `flutter`, `flutter-ios`, `flutter-android`, `lynx-ios`, `lynx-android`, `capacitor`, `kotlin-multiplatform`). |
+| One channel | When `Origin` is present it is sent as `x-fingerly-origin` and the platform header is not sent, as on a direct call to the API. |
+| No origin and no platform | `400` (`missing_origin`), rejected locally. `x-fingerly-origin` is never synthesized from `Host`, `Referer` or the request URL. |
 | Body size | Bodies over 1 MiB get `413`. |
-| Forwarded upstream | Only the content type, the visitor metadata Fingerly needs, and an `Idempotency-Key`. Customer cookies and authorization headers never are. |
-| Proxy identity | The proxy reports itself upstream as `rust/0.2.0`, which the dashboard shows per proxy. |
+| Forwarded upstream | Alongside verified proxy metadata (`x-fingerly-host` included), only `content-type`, `x-api-key`, `user-agent`, `idempotency-key`, `sec-fetch-*` and `sec-ch-ua-*`. Customer cookies and authorization headers never are. |
+| Proxy identity | The proxy reports itself upstream as `rust/0.3.0`, which the dashboard shows per proxy. |
 | Relayed back | Only `Content-Type`, `X-Request-Id`, `RateLimit-Limit`, `RateLimit-Remaining` and `Retry-After`, plus `Cache-Control: no-store`, so nothing on the response names Fingerly. |
 | Deadline | One deadline, `timeout` (5 seconds by default), covers reading the browser's body and the whole upstream exchange, so a trickling answer cannot stretch it. |
 | Deadline passes during the upstream call | `504` |
-| Any other upstream failure | `502`: refused, reset, DNS, a truncated or malformed answer, an answer over 4 MiB. |
+| Any other upstream failure | `502`: refused, reset, DNS, a truncated or malformed answer, an answer over 4 MiB, a redirect, a status outside 200 to 599. |
+| Redirects | Never followed, also with a caller-supplied `http_client_builder`. |
 | Browser too slow to send its body | `408` |
 | Error responses | Each carries a short `text/plain` body and `Cache-Control: no-store`. |
 | Broken upstream | The answer is read in full before anything is relayed, so a broken upstream never reaches the browser as a `200`. |
 | Visitor disconnects | Dropping the service future cancels the upstream call. |
 
 Each upstream failure is reported once: to `on_error` if you set one,
-otherwise as one `tracing` warning under the `fingerly::proxy` target.
+otherwise as one `tracing` warning under the `fingerly::proxy` target. The line
+names the kind of failure only, never the key or the upstream address.
 
 ```rust
 let proxy = FingerlyProxy::builder()
@@ -351,30 +518,37 @@ let proxy = FingerlyProxy::builder()
     .build()?;
 ```
 
-`path` is optional. Leave it unset when the router already sends only the
-issued path to the service, as `route_service` does. Set it when the service
-sees more than that, as a fallback does, and the proxy answers only that path,
-exactly: a trailing or doubled slash, a dot segment, an encoded character, a
-different case or a path under it all get `404`:
+Set `path` wherever the service sees the original path. The proxy then answers
+only that path, exactly: a trailing or doubled slash, a dot segment, an encoded
+character, a different case or a path under it all get `404` with
+`Cache-Control: no-store`, and only an exact uppercase `POST` is forwarded.
+Mounted as the fallback as well, as above, the proxy gives that answer for
+every near miss. An application with a fallback of its own keeps it, mounts
+only the route, and the router answers paths next to it. Without `path`, the
+proxy answers whatever the router sends it.
+
+Do not set it under `nest_service` or any other router that strips the mount
+before the service sees it: the path would never match.
+
+`upstream` is for a test harness and is a bare origin only: `https://host` or
+`https://host:port`, with no path, query, fragment, credentials, whitespace or
+control byte. Plain HTTP is refused, except for `127.0.0.1`, `localhost` or
+`[::1]` with `allow_insecure_loopback(true)`:
 
 ```rust
 let proxy = FingerlyProxy::builder()
     .proxy_key(std::env::var("FINGERLY_PROXY_KEY")?)
-    .path("/k7x2qm4a")
+    .upstream("http://127.0.0.1:8080")
+    .allow_insecure_loopback(true)
     // ...
     .build()?;
-
-let app = axum::Router::new().fallback_service(proxy);
 ```
-
-Do not set it under `nest_service` or any other router that strips the mount
-before the service sees it: the path would never match.
 
 ## Features
 
 | Feature | Default | What it adds |
 | --- | --- | --- |
-| `client` | yes | `Fingerly` and event reads, over reqwest and Tokio. |
+| `client` | yes | `Fingerly`, event reads and DeviceCheck bits, over reqwest and Tokio. |
 | `proxy` | yes | `FingerlyProxy`, a `tower::Service`. Implies `client`. |
 | `rustls` | yes | TLS through rustls. |
 | `native-tls` | no | TLS through the platform's own stack instead. |
@@ -415,7 +589,7 @@ bump from silently raising it.
 
 `client.rs` holds `Fingerly` and its builder. `transport.rs` performs
 authenticated requests and maps failures to `Error::Api`. `events.rs` owns the
-event reads and the list filters; `models.rs` owns the types
+event reads, the list filters, consuming and verifying; `models.rs` owns the types
 they decode into. `webhooks.rs` verifies signatures and needs nothing else in
 the crate. `proxy.rs` is the same-origin service. `config.rs` validates every
 caller-supplied option: keys, origins, API versions, proxy paths and durations,
