@@ -78,14 +78,15 @@ pub use crate::proxy::{
 };
 
 pub use crate::enums::{
-    AnonymityNetwork, AttestSkippedReason, AttestationState, AttestationStatus, Confidence,
-    Environment, EventState, RiskPlatform, RiskSource, Signal, SuspectLevel, WebhookEnvironment,
+    AiPurpose, AiRuntime, AiVerificationMethod, AiVerificationResult, AnonymityNetwork,
+    AttestSkippedReason, AttestationState, AttestationStatus, Confidence, Environment, EventState,
+    RiskPlatform, RiskSource, Signal, SuspectLevel, VisitorKind, WebhookEnvironment,
     WebhookEventType,
 };
 pub use crate::errors::{ApiError, Error, Result};
 pub use crate::models::{
-    Attestation, Event, EventDocument, EventDocumentSdk, EventPage, EventRiskReport,
-    EventRiskTrigger, EventTrigger,
+    AiAgent, AiVerification, Attestation, Event, EventDocument, EventDocumentSdk, EventPage,
+    EventRiskReport, EventRiskTrigger, EventTrigger,
 };
 pub use crate::webhooks::{
     verify_webhook, WebhookEvent, WebhookVerifier, DEFAULT_WEBHOOK_TOLERANCE,

@@ -2,9 +2,10 @@
 //! every customer's comparisons are keyed on them.
 
 use fingerly::{
-    AnonymityNetwork, AttestSkippedReason, AttestationState, AttestationStatus, Confidence,
-    Environment, EventState, EventTrigger, RiskPlatform, RiskSource, Signal, SuspectLevel,
-    WebhookEnvironment, WebhookEvent, WebhookEventType,
+    AiPurpose, AiRuntime, AiVerificationMethod, AiVerificationResult, AnonymityNetwork,
+    AttestSkippedReason, AttestationState, AttestationStatus, Confidence, Environment, EventState,
+    EventTrigger, RiskPlatform, RiskSource, Signal, SuspectLevel, VisitorKind, WebhookEnvironment,
+    WebhookEvent, WebhookEventType,
 };
 
 /// Every known variant's wire value, in declaration order, and each one
@@ -165,6 +166,26 @@ fn other_wire_values() {
         ],
     );
     assert_wire(WebhookEnvironment::KNOWN, &["live", "test"]);
+    assert_wire(
+        VisitorKind::KNOWN,
+        &["human", "ai_bot", "automation", "search_crawler"],
+    );
+    assert_wire(
+        AiPurpose::KNOWN,
+        &["training", "search", "user_fetch", "agent"],
+    );
+    assert_wire(
+        AiRuntime::KNOWN,
+        &["provider_cloud", "hosted_browser", "user_device"],
+    );
+    assert_wire(
+        AiVerificationMethod::KNOWN,
+        &["signature", "ip_list", "reverse_dns", "none"],
+    );
+    assert_wire(
+        AiVerificationResult::KNOWN,
+        &["pass", "fail", "not_attempted"],
+    );
 }
 
 /// A value this build has no variant for decodes, keeps its exact text and

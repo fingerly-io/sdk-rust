@@ -8,9 +8,50 @@
 use serde::{Deserialize, Serialize};
 
 use crate::enums::{
-    AnonymityNetwork, AttestSkippedReason, AttestationState, AttestationStatus, Confidence,
-    Environment, EventState, RiskPlatform, RiskSource, Signal, SuspectLevel,
+    AiPurpose, AiRuntime, AiVerificationMethod, AiVerificationResult, AnonymityNetwork,
+    AttestSkippedReason, AttestationState, AttestationStatus, Confidence, Environment, EventState,
+    RiskPlatform, RiskSource, Signal, SuspectLevel, VisitorKind,
 };
+
+/// How an AI agent's claimed identity was checked, and what that found.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[non_exhaustive]
+pub struct AiVerification {
+    /// How the claim was checked, such as [`AiVerificationMethod::None`].
+    #[serde(default)]
+    pub method: AiVerificationMethod,
+    /// What the check found, such as [`AiVerificationResult::NotAttempted`].
+    #[serde(default)]
+    pub result: AiVerificationResult,
+}
+
+/// The AI agent behind an [`VisitorKind::AiBot`] event: who operates it, what
+/// its traffic is for and how far its claim was checked.
+///
+/// The identity comes from the user agent, which any client can copy, and is
+/// not verified yet.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[non_exhaustive]
+pub struct AiAgent {
+    /// The agent as its operator names it, such as `ChatGPT-User`.
+    #[serde(default)]
+    pub name: String,
+    /// The company that operates it, such as `OpenAI`. An open string.
+    #[serde(default)]
+    pub provider: String,
+    /// What the operator says the traffic is for.
+    #[serde(default)]
+    pub purpose: AiPurpose,
+    /// Where the agent runs.
+    #[serde(default)]
+    pub runtime: AiRuntime,
+    /// Whether the agent named itself, in its user agent or a signature.
+    #[serde(default)]
+    pub declared: bool,
+    /// How the claimed identity was checked, and what that found.
+    #[serde(default)]
+    pub verification: AiVerification,
+}
 
 /// One signal group that contributed to an event's suspect score.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -273,9 +314,15 @@ pub struct Event {
     /// `desktop`, `mobile`, `tablet` or similar.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub device_kind: Option<String>,
-    /// What the visitor appears to be, such as `human` or `bot`.
+    /// What sort of client made the request, such as [`VisitorKind::Human`]
+    /// or [`VisitorKind::AiBot`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub visitor_kind: Option<String>,
+    pub visitor_kind: Option<VisitorKind>,
+    /// The AI agent, present only when [`Event::visitor_kind`] is
+    /// [`VisitorKind::AiBot`]. Its identity comes from the user agent, which
+    /// any client can copy, and is not verified yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ai: Option<AiAgent>,
 
     /// `None` when the request was not scored. Never read `None` as 0.
     #[serde(default)]

@@ -406,6 +406,72 @@ wire_enum! {
 }
 
 wire_enum! {
+    /// What sort of client made the request.
+    pub enum VisitorKind {
+        /// A person in an ordinary browser or app.
+        Human = "human",
+        /// An AI agent; [`Event::ai`](crate::Event::ai) names it.
+        AiBot = "ai_bot",
+        /// A browser driven by automation software.
+        Automation = "automation",
+        /// A search engine crawler.
+        SearchCrawler = "search_crawler",
+    }
+}
+
+wire_enum! {
+    /// What an AI agent's operator says its traffic is for.
+    pub enum AiPurpose {
+        /// Collecting content to train models.
+        Training = "training",
+        /// Indexing for an AI answer or search product.
+        Search = "search",
+        /// Reading a page a person asked an assistant to read.
+        UserFetch = "user_fetch",
+        /// Driving a browser on a person's behalf.
+        Agent = "agent",
+    }
+}
+
+wire_enum! {
+    /// Where an AI agent runs.
+    pub enum AiRuntime {
+        /// The operator's own infrastructure.
+        ProviderCloud = "provider_cloud",
+        /// A third party's cloud browser.
+        HostedBrowser = "hosted_browser",
+        /// A person's own browser.
+        UserDevice = "user_device",
+    }
+}
+
+wire_enum! {
+    /// How an AI agent's claimed identity was checked.
+    pub enum AiVerificationMethod {
+        /// A signed request.
+        Signature = "signature",
+        /// The operator's published address ranges.
+        IpList = "ip_list",
+        /// A reverse lookup confirmed forward.
+        ReverseDns = "reverse_dns",
+        /// Not checked.
+        None = "none",
+    }
+}
+
+wire_enum! {
+    /// What checking an AI agent's claimed identity found.
+    pub enum AiVerificationResult {
+        /// The claim held.
+        Pass = "pass",
+        /// It was checked and did not hold.
+        Fail = "fail",
+        /// No check was made.
+        NotAttempted = "not_attempted",
+    }
+}
+
+wire_enum! {
     /// The deployment an event was recorded in, set by the key that submitted
     /// it.
     pub enum Environment {

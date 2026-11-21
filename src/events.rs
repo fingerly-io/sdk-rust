@@ -5,7 +5,7 @@ use std::sync::Arc;
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use serde::Deserialize;
 
-use crate::enums::SuspectLevel;
+use crate::enums::{AiPurpose, SuspectLevel, VisitorKind};
 use crate::errors::{Error, Result};
 use crate::models::{Event, EventPage};
 use crate::transport::Transport;
@@ -46,6 +46,9 @@ pub struct EventListParams {
     limit: Option<u32>,
     visitor: Option<String>,
     level: Option<SuspectLevel>,
+    kind: Option<VisitorKind>,
+    ai_provider: Option<String>,
+    ai_purpose: Option<AiPurpose>,
 }
 
 impl EventListParams {
@@ -111,6 +114,27 @@ impl EventListParams {
         self
     }
 
+    /// Restrict the listing to one visitor kind, such as
+    /// [`VisitorKind::AiBot`].
+    pub fn kind(mut self, value: VisitorKind) -> Self {
+        self.kind = Some(value);
+        self
+    }
+
+    /// Restrict the listing to one AI agent operator, exactly as events name
+    /// it (case sensitive), such as `OpenAI`.
+    pub fn ai_provider(mut self, value: impl Into<String>) -> Self {
+        self.ai_provider = Some(value.into());
+        self
+    }
+
+    /// Restrict the listing to one AI agent purpose, such as
+    /// [`AiPurpose::UserFetch`].
+    pub fn ai_purpose(mut self, value: AiPurpose) -> Self {
+        self.ai_purpose = Some(value);
+        self
+    }
+
     /// Renders the filters as a query string, omitting every unset one.
     fn query(&self) -> Result<String> {
         let mut pairs = url::form_urlencoded::Serializer::new(String::new());
@@ -131,6 +155,15 @@ impl EventListParams {
         }
         if let Some(level) = &self.level {
             pairs.append_pair("level", level.as_str());
+        }
+        if let Some(kind) = &self.kind {
+            pairs.append_pair("kind", kind.as_str());
+        }
+        if let Some(provider) = &self.ai_provider {
+            pairs.append_pair("ai_provider", provider);
+        }
+        if let Some(purpose) = &self.ai_purpose {
+            pairs.append_pair("ai_purpose", purpose.as_str());
         }
         let query = pairs.finish();
         Ok(if query.is_empty() {
