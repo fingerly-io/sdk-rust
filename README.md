@@ -543,7 +543,7 @@ its body read yourself, because `timeout` only starts once `handle` is called.
 | One channel | When `Origin` is present it is sent as `x-fingerly-origin` and the platform header is not sent, as on a direct call to the API. |
 | No origin and no platform | `400` (`missing_origin`), rejected locally. `x-fingerly-origin` is never synthesized from `Host`, `Referer` or the request URL. |
 | Body size | Bodies over 1 MiB get `413`. |
-| Forwarded upstream | Alongside verified proxy metadata (`x-fingerly-host` included), only `content-type`, `x-api-key`, `user-agent`, `idempotency-key`, `sec-fetch-*` and `sec-ch-ua-*`. Customer cookies and authorization headers never are. |
+| Forwarded upstream | Alongside verified proxy metadata (`x-fingerly-host` included), only `content-type`, `x-api-key`, `user-agent`, `idempotency-key`, `sec-fetch-*`, `sec-ch-ua-*` and the Web Bot Auth `signature`, `signature-input` and `signature-agent` (each dropped when over 4096 bytes). Customer cookies and authorization headers never are. |
 | Proxy identity | The proxy reports itself upstream as `rust/0.4.1`, which the dashboard shows per proxy. |
 | Relayed back | Only `Content-Type`, `X-Request-Id`, `RateLimit-Limit`, `RateLimit-Remaining` and `Retry-After`, plus `Cache-Control: no-store`, so nothing on the response names Fingerly. |
 | Deadline | One deadline, `timeout` (5 seconds by default), covers reading the browser's body and the whole upstream exchange, so a trickling answer cannot stretch it. |

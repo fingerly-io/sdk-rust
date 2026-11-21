@@ -1263,6 +1263,61 @@ async fn forwards_browser_fetch_metadata_and_client_hints_verbatim() {
     assert!(!forwarded.headers.contains_key("x-custom-untrusted"));
 }
 
+const SIGNATURE: &str = "sig1=:dGVzdC1zaWduYXR1cmU=:";
+const SIGNATURE_INPUT: &str = r#"sig1=("@authority" "signature-agent");created=1735689600;keyid="k1";alg="ed25519";tag="web-bot-auth""#;
+const SIGNATURE_AGENT: &str = r#""https://chatgpt.com""#;
+
+/// An identification signed with Web Bot Auth, as an AI agent's browser sends one.
+fn signed_identify(signature: &str, agent: &str) -> Request<Full<Bytes>> {
+    let mut request = identify(PATH);
+    let headers = request.headers_mut();
+    headers.insert("host", "shop.example.com".parse().unwrap());
+    headers.insert("x-custom-untrusted", "drop-me".parse().unwrap());
+    headers.insert("signature", signature.parse().unwrap());
+    headers.insert("signature-input", SIGNATURE_INPUT.parse().unwrap());
+    headers.insert("signature-agent", agent.parse().unwrap());
+    request
+}
+
+#[tokio::test]
+async fn forwards_web_bot_auth_headers_unchanged() {
+    let server = TestServer::always(identified().header("fingerly-balance-micros", "100")).await;
+    let response = proxy(&server)
+        .handle(signed_identify(SIGNATURE, SIGNATURE_AGENT))
+        .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    assert!(!response.headers().contains_key("fingerly-balance-micros"));
+    assert_eq!(
+        body_of(response).await,
+        r#"{"request_id":"req_1","visitor_id":"vis_1"}"#
+    );
+
+    let forwarded = server.first();
+    assert_eq!(forwarded.header("signature"), SIGNATURE);
+    assert_eq!(forwarded.header("signature-input"), SIGNATURE_INPUT);
+    assert_eq!(forwarded.header("signature-agent"), SIGNATURE_AGENT);
+    assert_eq!(forwarded.header("x-fingerly-host"), "shop.example.com");
+    assert!(!forwarded.headers.contains_key("x-custom-untrusted"));
+}
+
+#[tokio::test]
+async fn drops_a_web_bot_auth_header_over_4096_bytes() {
+    let server = TestServer::always(identified()).await;
+    let oversized = format!("sig1=:{}:", "A".repeat(4097));
+    let at_cap = format!(r#""https://{}""#, "a".repeat(4096 - 10));
+    assert_eq!(at_cap.len(), 4096);
+    let response = proxy(&server)
+        .handle(signed_identify(&oversized, &at_cap))
+        .await;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let forwarded = server.first();
+    assert!(!forwarded.headers.contains_key("signature"));
+    assert_eq!(forwarded.header("signature-input"), SIGNATURE_INPUT);
+    assert_eq!(forwarded.header("signature-agent"), at_cap);
+}
+
 #[tokio::test]
 async fn answers_cors_preflight_and_exposes_allowlisted_headers_for_allowed_origins() {
     let server = TestServer::always(identified().header("retry-after", "2")).await;

@@ -64,6 +64,14 @@ const CLIENT_METADATA_HEADERS: [&str; 6] = [
     "sec-ch-ua-platform",
 ];
 
+/// Web Bot Auth headers an AI agent's browser signs the request with,
+/// forwarded when present and at most [`MAX_SIGNATURE_HEADER_BYTES`]. The API
+/// ignores a longer one, so it is dropped here rather than refused.
+const SIGNATURE_HEADERS: [&str; 3] = ["signature", "signature-input", "signature-agent"];
+
+/// The longest Web Bot Auth header value forwarded, in bytes.
+const MAX_SIGNATURE_HEADER_BYTES: usize = 4096;
+
 /// Exact lowercase native and multi-platform bridge identifiers accepted on
 /// incoming `x-fingerly-sdk-platform` before stripping `x-fingerly-*`.
 const VALID_SDK_PLATFORMS: [&str; 12] = [
@@ -122,6 +130,22 @@ fn non_empty_header(headers: &http::HeaderMap, name: &str) -> Option<HeaderValue
         return None;
     }
     Some(value.clone())
+}
+
+/// A Web Bot Auth header, its repeated lines joined into the one structured
+/// field list they form (RFC 9110), when non-empty and within the cap.
+fn signature_header(headers: &http::HeaderMap, name: &str) -> Option<HeaderValue> {
+    let mut joined = Vec::new();
+    for value in headers.get_all(name) {
+        if !joined.is_empty() {
+            joined.extend_from_slice(b", ");
+        }
+        joined.extend_from_slice(value.as_bytes());
+    }
+    if joined.len() > MAX_SIGNATURE_HEADER_BYTES || joined.iter().all(u8::is_ascii_whitespace) {
+        return None;
+    }
+    HeaderValue::from_bytes(&joined).ok()
 }
 
 /// Resolves the visitor's address from the parts of the incoming request.
@@ -557,6 +581,11 @@ impl ProxyInner {
         }
         for name in CLIENT_METADATA_HEADERS {
             if let Some(value) = non_empty_header(&parts.headers, name) {
+                headers.insert(HeaderName::from_static(name), value);
+            }
+        }
+        for name in SIGNATURE_HEADERS {
+            if let Some(value) = signature_header(&parts.headers, name) {
                 headers.insert(HeaderName::from_static(name), value);
             }
         }
