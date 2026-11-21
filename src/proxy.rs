@@ -67,7 +67,7 @@ const CLIENT_METADATA_HEADERS: [&str; 6] = [
 /// Web Bot Auth headers an AI agent's browser signs the request with,
 /// forwarded when present and at most [`MAX_SIGNATURE_HEADER_BYTES`]. The API
 /// ignores a longer one, so it is dropped here rather than refused.
-const SIGNATURE_HEADERS: [&str; 3] = ["signature", "signature-input", "signature-agent"];
+pub(crate) const SIGNATURE_HEADERS: [&str; 3] = ["signature", "signature-input", "signature-agent"];
 
 /// The longest Web Bot Auth header value forwarded, in bytes.
 const MAX_SIGNATURE_HEADER_BYTES: usize = 4096;
@@ -134,7 +134,7 @@ fn non_empty_header(headers: &http::HeaderMap, name: &str) -> Option<HeaderValue
 
 /// A Web Bot Auth header, its repeated lines joined into the one structured
 /// field list they form (RFC 9110), when non-empty and within the cap.
-fn signature_header(headers: &http::HeaderMap, name: &str) -> Option<HeaderValue> {
+pub(crate) fn signature_header(headers: &http::HeaderMap, name: &str) -> Option<HeaderValue> {
     let mut joined = Vec::new();
     for value in headers.get_all(name) {
         if !joined.is_empty() {
@@ -442,16 +442,23 @@ impl FingerlyProxy {
     }
 }
 
+/// Runs a `client_ip` callback and accepts exactly one IPv4 or IPv6 literal:
+/// no list, no port, no zone, no surrounding space. A panic in the callback
+/// reads as no address.
+pub(crate) fn resolve_client_ip(client_ip: &ClientIpFn, parts: &Parts) -> Option<IpAddr> {
+    catch_unwind(AssertUnwindSafe(|| client_ip(parts)))
+        .ok()?
+        .parse()
+        .ok()
+}
+
 impl ProxyInner {
     /// Runs the `client_ip` callback and accepts exactly one IPv4 or IPv6
     /// literal: no list, no port, no zone, no surrounding space. A panic in
     /// the callback is the same integration bug as a wrong value, and the
     /// visitor is owed the same answer rather than a dropped connection.
     fn visitor_ip(&self, parts: &Parts) -> Option<IpAddr> {
-        catch_unwind(AssertUnwindSafe(|| (self.client_ip)(parts)))
-            .ok()?
-            .parse()
-            .ok()
+        resolve_client_ip(&*self.client_ip, parts)
     }
 
     /// Hands a failure to the hook, or logs one line about it. The answer is

@@ -20,8 +20,10 @@ default = ["client", "proxy", "rustls"]
 # Event reads over HTTP. Turn it off for a webhook-only build, which then needs
 # neither an HTTP stack nor an async runtime.
 client = ["dep:reqwest", "dep:tokio", "dep:url", "dep:percent-encoding"]
-# The same-origin proxy, as a tower::Service over http types.
-proxy = ["client", "dep:http", "dep:http-body", "dep:http-body-util", "dep:bytes", "dep:tower-service", "dep:tracing"]
+# The same-origin proxy, as a tower::Service over http types, and the agent
+# sightings layer, a tower::Layer that reports served requests in the
+# background.
+proxy = ["client", "tokio/rt", "dep:http", "dep:http-body", "dep:http-body-util", "dep:bytes", "dep:tower-service", "dep:tower-layer", "dep:tracing"]
 # TLS backend. Pick exactly one; rustls is the default.
 rustls = ["reqwest?/rustls"]
 native-tls = ["reqwest?/native-tls"]
@@ -45,6 +47,7 @@ http-body = { version = "1", optional = true }
 http-body-util = { version = "0.1", optional = true }
 bytes = { version = "1", optional = true }
 tower-service = { version = "0.3", optional = true }
+tower-layer = { version = "0.3", optional = true }
 # One warning line per proxy failure when no on_error hook is set.
 tracing = { version = "0.1", default-features = false, features = ["std"], optional = true }
 

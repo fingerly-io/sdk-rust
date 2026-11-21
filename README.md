@@ -74,8 +74,9 @@ Full guide: [docs.fingerly.io/docs/sdks/rust](https://docs.fingerly.io/docs/sdks
 | Check a webhook delivery is genuine | `verify_webhook` and `WebhookVerifier` | [Verify webhooks](#verify-webhooks) |
 | Read or set an iOS device's two DeviceCheck bits | `device_check().query` / `write` | [DeviceCheck bits on iOS](#devicecheck-bits-on-ios) |
 | Keep the browser SDK first-party, away from content blockers | `FingerlyProxy`, a `tower::Service` | [First-party proxy](#first-party-proxy-same-origin) |
+| See AI crawlers that never run the page's JavaScript | `AgentSightings`, a `tower::Layer` | [AI crawlers on your server](#ai-crawlers-on-your-server) |
 
-On this page: [Read events](#read-events) · [DeviceCheck bits on iOS](#devicecheck-bits-on-ios) · [Verify webhooks](#verify-webhooks) · [First-party proxy](#first-party-proxy-same-origin) · [Features](#features) · [Requirements](#requirements) · [Development](#development-and-release-preparation) · [Documentation](#documentation) · [Help](#help) · [Licence](#licence)
+On this page: [Read events](#read-events) · [DeviceCheck bits on iOS](#devicecheck-bits-on-ios) · [Verify webhooks](#verify-webhooks) · [First-party proxy](#first-party-proxy-same-origin) · [AI crawlers on your server](#ai-crawlers-on-your-server) · [Features](#features) · [Requirements](#requirements) · [Development](#development-and-release-preparation) · [Documentation](#documentation) · [Help](#help) · [Licence](#licence)
 
 ## Read events
 
@@ -593,12 +594,149 @@ let proxy = FingerlyProxy::builder()
     .build()?;
 ```
 
+## AI crawlers on your server
+
+Most AI crawler and fetcher requests (GPTBot, ClaudeBot and the like) load a
+page without running its JavaScript, so they never reach the browser SDK and
+leave no event. `AgentSightings` reports the pages your server served to
+Fingerly, in the background, and remembers what Fingerly answered about each
+one. The console's AI traffic view then counts them, and your handlers can ask
+what sent a request.
+
+It runs under your secret key, on the `Fingerly` client's connection pool, and
+mounts as a `tower::Layer`, which axum takes directly:
+
+```rust
+use std::net::SocketAddr;
+
+use axum::extract::{ConnectInfo, Extension};
+use axum::response::Html;
+use axum::routing::get;
+use fingerly::{AgentLookup, AgentSightings, AiVerificationResult, Fingerly, VisitorKind};
+
+async fn home(Extension(lookup): Extension<AgentLookup>) -> Html<&'static str> {
+    if let Some(ai) = lookup.ai() {
+        if ai.verification.result == AiVerificationResult::Fail {
+            // An AI agent's name, sent from an address its operator does not
+            // publish. Decide what that means for your site.
+        }
+    }
+    if lookup.visitor_kind() == Some(&VisitorKind::SearchCrawler) {
+        // A search engine's crawler, as the server classified it.
+    }
+    // AgentLookup::Unknown: serve as usual.
+    Html("<h1>Welcome</h1>")
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let fingerly = Fingerly::new(std::env::var("FINGERLY_SECRET_KEY")?)?;
+    let sightings = AgentSightings::builder(&fingerly)
+        .client_ip(|parts| {
+            // The header your load balancer or CDN sets, else the TCP peer.
+            if let Some(address) = parts.headers.get("x-real-ip").and_then(|v| v.to_str().ok()) {
+                return address.to_owned();
+            }
+            parts
+                .extensions
+                .get::<ConnectInfo<SocketAddr>>()
+                .map(|ConnectInfo(peer)| peer.ip().to_string())
+                .unwrap_or_default()
+        })
+        .build()?;
+
+    let app = axum::Router::new()
+        .route("/", get(home))
+        .layer(sightings.layer());
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await?;
+
+    // Send what is still buffered before the process exits.
+    sightings.close().await;
+    Ok(())
+}
+```
+
+`client_ip` is the same callback, with the same rules, as the proxy's: one
+IPv4 or IPv6 address from a header your own infrastructure sets, else the TCP
+peer, and never the left-most `X-Forwarded-For` value. A request it returns no
+address for is not reported, and that is reported once a minute.
+
+### Asking what sent a request
+
+The layer puts an `AgentLookup` in every request's extensions. Elsewhere,
+`sightings.lookup(&request)` or `sightings.lookup_parts(&parts)` answers the
+same. A lookup reads memory only: it never waits on the network and never
+fails. It returns `AgentLookup::Known` with the server's answer
+(`visitor_kind`, `agent`, and for an AI agent the `ai` object with how its
+claim was checked) when the server has answered for this exact user agent,
+address and `Signature-Agent` and the answer has not expired, and
+`AgentLookup::Unknown` otherwise. Treat `Unknown` as "serve as usual".
+
+The first request from a client is always `Unknown`: it is reported after its
+response, and the answer arrives with the next flush. A request signed with
+Web Bot Auth is checked every time, so it is never remembered and its lookup
+is always `Unknown`; its answer still reaches the console.
+
+### Which responses are reported
+
+| Rule | Behaviour |
+| --- | --- |
+| By default | Responses with a `Content-Type` of `text/html` or `application/xhtml+xml`, and every request for `/robots.txt`, `/llms.txt` and `/llms-full.txt`, whatever the status. |
+| `content_types([...])` | Replaces the default content types. Compared with the media type, without parameters and ignoring case. |
+| `include_paths([...])` | Path prefixes reported whatever their content type. |
+| `exclude_paths([...])` | Path prefixes never reported. They win over everything else. |
+| Never | Static assets, API routes and health checks unless you include them. Nothing is ever chosen by user agent, address or any request header. |
+
+The report is made once your service has produced the response, and never
+delays it.
+
+### What is sent
+
+| Sent | Never sent |
+| --- | --- |
+| The `User-Agent` as received (a request with one over 4096 bytes is not reported), the client address from `client_ip`, the `Host`, the method, the Web Bot Auth `Signature`, `Signature-Input` and `Signature-Agent` headers (each left out over 4096 bytes), and how many times the same request was served since the last report. | The path, the query string, cookies, `Authorization`, any other header, the request body and the response. None of the reported fields is logged. |
+
+### Memory, batching and failures
+
+- Answers are kept in a least-recently-used cache, per process: 4096 entries by
+  default (about 1.5 MB), up to 65536 with `cache_capacity` (about 25 MB). Each
+  answer is kept for the `ttl` the server gave it, and all of them are dropped
+  when the server's `rules_version` changes.
+- Repeats of the same request are folded into one pending report with a count,
+  so a crawler fetching a thousand pages is a handful of items. At most 1000
+  requests are pending; past that a new request is not buffered (it stays
+  `Unknown`) and `sightings.dropped()` counts it.
+- A Tokio task sends up to 200 requests at a time, two seconds after the oldest
+  pending one or as soon as 200 requests or 64 KiB are pending, one call at a
+  time, each under a 5 second deadline. It never runs on a request you are
+  serving.
+- It fails open. A rate-limited call (`429`) keeps the batch and waits for
+  `Retry-After`; an unavailable API (`503`) or a failed connection keeps it and
+  retries after 1 second, doubling up to a minute; a refused key (`401`/`403`)
+  drops it and pauses for a minute; an invalid batch (`422`) or a deadline
+  passed after the request went out drops it. Requests keep being served
+  throughout, and lookups keep answering from the cache or `Unknown`.
+- Failures the component handled go to `on_error` if you set one, otherwise
+  to one `tracing` warning under the `fingerly::agents` target, each kind at
+  most once a minute.
+
+On a serverless or edge runtime, where nothing runs between invocations, call
+`sightings.flush().await` before the invocation ends. On shutdown,
+`sightings.close().await` sends what is left and stops the task.
+
+For a framework that does not speak `tower`, call
+`sightings.report(&parts, response.headers())` once the response is produced;
+it applies the same rules and never waits on the network. The single call
+underneath is `fingerly.agents().sightings(&items)`, for a server that batches
+on its own.
+
 ## Features
 
 | Feature | Default | What it adds |
 | --- | --- | --- |
 | `client` | yes | `Fingerly`, event reads and DeviceCheck bits, over reqwest and Tokio. |
-| `proxy` | yes | `FingerlyProxy`, a `tower::Service`. Implies `client`. |
+| `proxy` | yes | `FingerlyProxy`, a `tower::Service`, and `AgentSightings`, a `tower::Layer`. Implies `client`. |
 | `rustls` | yes | TLS through rustls. |
 | `native-tls` | no | TLS through the platform's own stack instead. |
 | `time` | no | `OffsetDateTime` accessors for event timestamps and list windows. |
@@ -640,7 +778,9 @@ bump from silently raising it.
 authenticated requests and maps failures to `Error::Api`. `events.rs` owns the
 event reads, the list filters, consuming and verifying; `models.rs` owns the types
 they decode into. `webhooks.rs` verifies signatures and needs nothing else in
-the crate. `proxy.rs` is the same-origin service. `config.rs` validates every
+the crate. `proxy.rs` is the same-origin service. `agents.rs` is the agent sightings
+call and `sightings.rs` the component and layer built on it: the cache key,
+the answer cache, the buffer and the background flusher. `config.rs` validates every
 caller-supplied option: keys, origins, API versions, proxy paths and durations,
 all before any network access. `errors.rs` holds the error type.
 

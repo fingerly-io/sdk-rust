@@ -14,9 +14,9 @@ use std::time::Duration;
 
 use common::{Canned, TestServer, SECRET_KEY};
 use fingerly::{
-    AiPurpose, AiRuntime, AiVerificationMethod, AiVerificationResult, AttestSkippedReason,
-    Attestation, AttestationState, AttestationStatus, Error, Event, EventListParams, Fingerly,
-    Signal, VisitorKind, WebhookVerifier,
+    AgentSighting, AiPurpose, AiRuntime, AiVerificationMethod, AiVerificationResult,
+    AttestSkippedReason, Attestation, AttestationState, AttestationStatus, Error, Event,
+    EventListParams, Fingerly, Signal, VisitorKind, WebhookVerifier,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -195,6 +195,46 @@ async fn reads_the_ai_agent_fixture() {
     assert!(ai.declared);
     assert_eq!(ai.verification.method, AiVerificationMethod::None);
     assert_eq!(ai.verification.result, AiVerificationResult::NotAttempted);
+}
+
+#[tokio::test]
+async fn reads_the_agent_sightings_fixture() {
+    let fixture = response_fixture("agent_sightings");
+    assert_eq!(fixture.schema, "AgentSightingsOut");
+    let server = serving(&fixture).await;
+    let items: Vec<AgentSighting> = (0..5)
+        .map(|i| AgentSighting::new(format!("agent {i}"), "198.51.100.1"))
+        .collect();
+    let answers = client(&server).agents().sightings(&items).await.unwrap();
+
+    assert_eq!(answers.rules_version, "0123456789abcdef");
+    assert_eq!(answers.items.len(), 5);
+    let [human, gptbot, user, agent, googlebot] = &answers.items[..] else {
+        panic!("five answers");
+    };
+    assert_eq!(human.ttl, 3600);
+    assert_eq!(human.visitor_kind, VisitorKind::Human);
+    assert!(human.agent.is_none() && human.ai.is_none());
+
+    assert_eq!(gptbot.visitor_kind, VisitorKind::AiBot);
+    assert_eq!(gptbot.agent.as_deref(), Some("GPTBot"));
+    let ai = gptbot.ai.as_ref().unwrap();
+    assert_eq!(ai.purpose, AiPurpose::Training);
+    assert_eq!(ai.verification.method, AiVerificationMethod::IpList);
+    assert_eq!(ai.verification.result, AiVerificationResult::Pass);
+
+    let ai = user.ai.as_ref().unwrap();
+    assert_eq!(ai.purpose, AiPurpose::UserFetch);
+    assert_eq!(ai.verification.result, AiVerificationResult::Fail);
+
+    assert_eq!(agent.ttl, 0);
+    let ai = agent.ai.as_ref().unwrap();
+    assert_eq!(ai.purpose, AiPurpose::Agent);
+    assert_eq!(ai.verification.method, AiVerificationMethod::Signature);
+
+    assert_eq!(googlebot.visitor_kind, VisitorKind::SearchCrawler);
+    assert_eq!(googlebot.agent.as_deref(), Some("Googlebot"));
+    assert!(googlebot.ai.is_none());
 }
 
 #[tokio::test]

@@ -14,7 +14,7 @@ use crate::enums::{
 };
 
 /// How an AI agent's claimed identity was checked, and what that found.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[non_exhaustive]
 pub struct AiVerification {
     /// How the claim was checked, such as [`AiVerificationMethod::None`].
@@ -30,7 +30,7 @@ pub struct AiVerification {
 ///
 /// The identity comes from the user agent, which any client can copy, and is
 /// not verified yet.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[non_exhaustive]
 pub struct AiAgent {
     /// The agent as its operator names it, such as `ChatGPT-User`.
@@ -428,4 +428,125 @@ pub struct EventPage {
     /// The response body exactly as it arrived.
     #[serde(skip)]
     pub raw: serde_json::Value,
+}
+
+/// One request your server served, as raw input for
+/// [`AgentsClient::sightings`](crate::AgentsClient::sightings).
+///
+/// Nothing in it is decided by the SDK: the server classifies the request.
+/// It never carries the path, the query string, cookies, `Authorization` or a
+/// body.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
+pub struct AgentSighting {
+    /// The `User-Agent` header as received, or `""` when there was none. At
+    /// most 4096 bytes.
+    pub user_agent: String,
+    /// The client's address from your trusted client-IP source: one IPv4 or
+    /// IPv6 literal, never a forwarded list.
+    pub client_ip: String,
+    /// The `Host` the request was sent to.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+    /// The request method; the server reads a missing one as `GET`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub method: Option<String>,
+    /// The Web Bot Auth `Signature` header. At most 4096 bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+    /// The Web Bot Auth `Signature-Input` header. At most 4096 bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature_input: Option<String>,
+    /// The Web Bot Auth `Signature-Agent` header. At most 4096 bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature_agent: Option<String>,
+    /// How many times this exact request was served since it was last
+    /// reported, this one included; the server reads a missing one as 1. At
+    /// most 1,000,000.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub count: Option<u64>,
+}
+
+impl AgentSighting {
+    /// A request with its user agent and client address.
+    pub fn new(user_agent: impl Into<String>, client_ip: impl Into<String>) -> Self {
+        AgentSighting {
+            user_agent: user_agent.into(),
+            client_ip: client_ip.into(),
+            ..AgentSighting::default()
+        }
+    }
+
+    /// Sets the `Host` the request was sent to.
+    pub fn host(mut self, host: impl Into<String>) -> Self {
+        self.host = Some(host.into());
+        self
+    }
+
+    /// Sets the request method.
+    pub fn method(mut self, method: impl Into<String>) -> Self {
+        self.method = Some(method.into());
+        self
+    }
+
+    /// Sets the `Signature` header.
+    pub fn signature(mut self, value: impl Into<String>) -> Self {
+        self.signature = Some(value.into());
+        self
+    }
+
+    /// Sets the `Signature-Input` header.
+    pub fn signature_input(mut self, value: impl Into<String>) -> Self {
+        self.signature_input = Some(value.into());
+        self
+    }
+
+    /// Sets the `Signature-Agent` header.
+    pub fn signature_agent(mut self, value: impl Into<String>) -> Self {
+        self.signature_agent = Some(value.into());
+        self
+    }
+
+    /// Sets how many times the request was served since it was last reported.
+    pub fn count(mut self, count: u64) -> Self {
+        self.count = Some(count);
+        self
+    }
+}
+
+/// The server's answer for one reported request.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[non_exhaustive]
+pub struct AgentAnswer {
+    /// Seconds this answer may be reused for the exact same user agent,
+    /// address and `Signature-Agent`; 0 for a signed request, which is checked
+    /// every time.
+    #[serde(default)]
+    pub ttl: i64,
+    /// What sort of client sent the request, such as [`VisitorKind::AiBot`].
+    #[serde(default)]
+    pub visitor_kind: VisitorKind,
+    /// The agent's name where the server knows it, such as `GPTBot`. `None`
+    /// for a person's browser.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
+    /// The AI agent, present when [`visitor_kind`](Self::visitor_kind) is
+    /// [`VisitorKind::AiBot`]: who operates it, what its traffic is for, and
+    /// how far its claim was checked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ai: Option<AiAgent>,
+}
+
+/// The answer to [`AgentsClient::sightings`](crate::AgentsClient::sightings):
+/// one [`AgentAnswer`] per reported request, in the same order.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[non_exhaustive]
+pub struct AgentAnswers {
+    /// Names the server's classification rules. When it changes, every
+    /// remembered answer is stale.
+    #[serde(default)]
+    pub rules_version: String,
+    /// One answer per reported request, in the same order.
+    #[serde(default)]
+    pub items: Vec<AgentAnswer>,
 }

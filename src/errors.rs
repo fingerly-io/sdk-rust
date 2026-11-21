@@ -24,9 +24,17 @@ pub struct ApiError {
     /// `Retry-After` header, or `None` when it sent none. The SDK never
     /// retries a read itself.
     pub retry_after: Option<u64>,
-    /// Read through [`consumed_at`](Self::consumed_at). Boxed so the error
-    /// stays small enough to return by value.
-    pub(crate) consumed_at: Option<Box<str>>,
+    /// Read through [`consumed_at`](Self::consumed_at) and
+    /// [`rate_limit_scope`](Self::rate_limit_scope). Boxed so the error stays
+    /// small enough to return by value.
+    pub(crate) extras: Option<Box<ApiErrorExtras>>,
+}
+
+/// The fields only some errors carry.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ApiErrorExtras {
+    pub(crate) consumed_at: Option<String>,
+    pub(crate) rate_limit_scope: Option<String>,
 }
 
 impl fmt::Display for ApiError {
@@ -65,7 +73,19 @@ impl ApiError {
     /// `409 event_already_consumed`. `None` for every other error, or when the
     /// API sent no time.
     pub fn consumed_at(&self) -> Option<&str> {
-        self.consumed_at.as_deref()
+        self.extras.as_ref()?.consumed_at.as_deref()
+    }
+
+    /// Which limit refused a `429`, from its `Fingerly-RateLimit-Scope`
+    /// header, such as `daily` for an organization's daily allowance. `None`
+    /// when the API sent none.
+    pub fn rate_limit_scope(&self) -> Option<&str> {
+        self.extras.as_ref()?.rate_limit_scope.as_deref()
+    }
+
+    #[cfg(feature = "client")]
+    pub(crate) fn extras_mut(&mut self) -> &mut ApiErrorExtras {
+        self.extras.get_or_insert_with(Box::default)
     }
 
     /// Apple's HTTP status for `422 apple_rejected`, from the `apple_status`
@@ -162,6 +182,15 @@ impl Error {
     pub fn retry_after(&self) -> Option<u64> {
         match self {
             Error::Api(api) => api.retry_after,
+            _ => None,
+        }
+    }
+
+    /// Which limit refused a `429`, from `Fingerly-RateLimit-Scope`, for an
+    /// API error that carried one.
+    pub fn rate_limit_scope(&self) -> Option<&str> {
+        match self {
+            Error::Api(api) => api.rate_limit_scope(),
             _ => None,
         }
     }
