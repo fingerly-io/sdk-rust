@@ -77,6 +77,119 @@
         ],
         "type": "object"
       },
+      "AgentSightingIn": {
+        "properties": {
+          "client_ip": {
+            "description": "The client's address from the server's trusted socket or edge header: one IPv4 or IPv6 literal, never a forwarded list",
+            "type": "string"
+          },
+          "count": {
+            "description": "How many times this exact request was served since the last report, this one included; 1 when absent, at most 1000000",
+            "format": "int64",
+            "type": "integer"
+          },
+          "host": {
+            "description": "The Host the request was sent to, which a signing agent signs",
+            "type": "string"
+          },
+          "method": {
+            "description": "The request method; GET when absent",
+            "type": "string"
+          },
+          "signature": {
+            "description": "The Signature header, when the request had one. At most 4096 bytes",
+            "type": "string"
+          },
+          "signature_agent": {
+            "description": "The Signature-Agent header, when the request had one. At most 4096 bytes",
+            "type": "string"
+          },
+          "signature_input": {
+            "description": "The Signature-Input header, when the request had one. At most 4096 bytes",
+            "type": "string"
+          },
+          "user_agent": {
+            "description": "The request's User-Agent header, as received; empty when it had none. At most 4096 bytes",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_ip",
+          "user_agent"
+        ],
+        "type": "object"
+      },
+      "AgentSightingOut": {
+        "properties": {
+          "agent": {
+            "description": "The agent's name where the server knows it, such as GPTBot or Googlebot. Absent for a person's browser",
+            "type": "string"
+          },
+          "ai": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AIAgentOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present when visitor_kind is ai_bot: who operates the agent, what its traffic is for, and how far its claim was checked"
+          },
+          "ttl": {
+            "description": "Seconds this answer may be reused for the exact same user agent, address and Signature-Agent; 0 for a signed request, which is checked every time",
+            "format": "int64",
+            "type": "integer"
+          },
+          "visitor_kind": {
+            "description": "human, ai_bot, automation or search_crawler. New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "human",
+              "ai_bot",
+              "automation",
+              "search_crawler"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "ttl",
+          "visitor_kind"
+        ],
+        "type": "object"
+      },
+      "AgentSightingsIn": {
+        "properties": {
+          "items": {
+            "description": "The requests, at most 200. Each is answered in the same position of the answer's items",
+            "items": {
+              "$ref": "#/components/schemas/AgentSightingIn"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "AgentSightingsOut": {
+        "properties": {
+          "items": {
+            "description": "One answer per reported request, in the same order",
+            "items": {
+              "$ref": "#/components/schemas/AgentSightingOut"
+            },
+            "type": "array"
+          },
+          "rules_version": {
+            "description": "Names the classification rules; when it changes, drop every remembered answer",
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "rules_version"
+        ],
+        "type": "object"
+      },
       "AttestEnvelope": {
         "properties": {
           "assertion": {
@@ -2723,6 +2836,95 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/agents/sightings": {
+      "post": {
+        "description": "Reports up to 200 requests your server served, as raw input, and answers what sent each one: `visitor_kind`, the agent's name and, for an AI agent, the `ai` object with how its claim was checked. AI crawlers and fetchers that never run a page's JavaScript are seen only this way.\n\nFree, and never part of the identification count. Each answer carries a `ttl`: the seconds it may be reused for the exact same user agent, address and Signature-Agent, so a server SDK reports a repeat request as a `count` on its next call rather than asking again. A signed request has a `ttl` of 0. When `rules_version` changes, drop every remembered answer.\n\nCalls are limited per key and per server address, and items per organization per day; a refused call answers `429` with `Retry-After` and `Fingerly-RateLimit-Scope`, and a server SDK then treats its requests as unchecked and serves them as usual.",
+        "operationId": "reportRequestsYourServerServed",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentSightingsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSightingsOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No usable secret SDK key was presented"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The organization is suspended or closed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "`invalid_request`: no items or more than 200, a header over 4096 bytes, an address that is not one IP literal, or a count over 1000000"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "`rate_limited`: over the key's, the address's or the organization's rate, or the organization's daily allowance (`Fingerly-RateLimit-Scope: daily`); retry after Retry-After"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "security": [
+          {
+            "secretKey": []
+          }
+        ],
+        "summary": "Report the requests your server served",
+        "tags": [
+          "Server API"
+        ],
+        "x-category": "Server API",
+        "x-title": "Report served requests"
+      }
+    },
     "/api/v1/attestation/challenge": {
       "post": {
         "description": "Issues a one-time, five-minute challenge bound to the authenticated key. Android has the device keystore attest to it and iOS signs it with App Attest; either way the evidence goes in the identify request, and a report that does not carry one of these challenges is never treated as proven.",

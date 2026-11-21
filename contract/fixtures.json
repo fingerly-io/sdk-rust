@@ -109,6 +109,73 @@
     },
     {
       "body": {
+        "rules_version": "0123456789abcdef",
+        "items": [
+          {
+            "ttl": 3600,
+            "visitor_kind": "human"
+          },
+          {
+            "ttl": 900,
+            "visitor_kind": "ai_bot",
+            "agent": "GPTBot",
+            "ai": {
+              "name": "GPTBot",
+              "provider": "OpenAI",
+              "purpose": "training",
+              "runtime": "provider_cloud",
+              "declared": true,
+              "verification": {
+                "method": "ip_list",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "ttl": 300,
+            "visitor_kind": "ai_bot",
+            "agent": "ChatGPT-User",
+            "ai": {
+              "name": "ChatGPT-User",
+              "provider": "OpenAI",
+              "purpose": "user_fetch",
+              "runtime": "provider_cloud",
+              "declared": true,
+              "verification": {
+                "method": "ip_list",
+                "result": "fail"
+              }
+            }
+          },
+          {
+            "ttl": 0,
+            "visitor_kind": "ai_bot",
+            "agent": "ChatGPT agent",
+            "ai": {
+              "name": "ChatGPT agent",
+              "provider": "OpenAI",
+              "purpose": "agent",
+              "runtime": "provider_cloud",
+              "declared": true,
+              "verification": {
+                "method": "signature",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "ttl": 3600,
+            "visitor_kind": "search_crawler",
+            "agent": "Googlebot"
+          }
+        ]
+      },
+      "name": "agent_sightings",
+      "schema": "AgentSightingsOut",
+      "status": 200
+    },
+    {
+      "body": {
         "rows": [
           {
             "request_id": "0199a963-e400-7000-8000-000000000001",

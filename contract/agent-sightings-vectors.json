@@ -1,0 +1,77 @@
+{
+  "schema": 1,
+  "vectors": [
+    {
+      "name": "a browser",
+      "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+      "client_ip": "203.0.113.7",
+      "canonical_ip": "203.0.113.7",
+      "signature_agent": "",
+      "signed": false,
+      "key": "db8a99998c2439424958bad9c885d201"
+    },
+    {
+      "name": "GPTBot",
+      "user_agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; GPTBot/1.4; +https://openai.com/gptbot",
+      "client_ip": "20.171.206.9",
+      "canonical_ip": "20.171.206.9",
+      "signature_agent": "",
+      "signed": false,
+      "key": "d422587795c2519b47d3fb7cecfd04cb"
+    },
+    {
+      "name": "an IPv4-mapped address is the IPv4 address",
+      "user_agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; GPTBot/1.4; +https://openai.com/gptbot",
+      "client_ip": "::ffff:20.171.206.9",
+      "canonical_ip": "20.171.206.9",
+      "signature_agent": "",
+      "signed": false,
+      "key": "d422587795c2519b47d3fb7cecfd04cb"
+    },
+    {
+      "name": "IPv6 in its canonical form",
+      "user_agent": "curl/8.7.1",
+      "client_ip": "2001:DB8:0:0:0:0:0:1",
+      "canonical_ip": "2001:db8::1",
+      "signature_agent": "",
+      "signed": false,
+      "key": "2246c860a0a71b9f49ea0b0177331c9a"
+    },
+    {
+      "name": "IPv6 already canonical",
+      "user_agent": "curl/8.7.1",
+      "client_ip": "2001:db8::1",
+      "canonical_ip": "2001:db8::1",
+      "signature_agent": "",
+      "signed": false,
+      "key": "2246c860a0a71b9f49ea0b0177331c9a"
+    },
+    {
+      "name": "an empty user agent",
+      "user_agent": "",
+      "client_ip": "198.51.100.1",
+      "canonical_ip": "198.51.100.1",
+      "signature_agent": "",
+      "signed": false,
+      "key": "5c233f5064f315394eedceb1352e4777"
+    },
+    {
+      "name": "a signed request",
+      "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+      "client_ip": "34.31.25.14",
+      "canonical_ip": "34.31.25.14",
+      "signature_agent": "\"https://chatgpt.com\"",
+      "signed": true,
+      "key": "b7577ac776020ce576f823d0844bad4e"
+    },
+    {
+      "name": "non-ASCII bytes are hashed as UTF-8",
+      "user_agent": "Mozilla/5.0 (compatible; Örnek/1.0)",
+      "client_ip": "198.51.100.2",
+      "canonical_ip": "198.51.100.2",
+      "signature_agent": "",
+      "signed": false,
+      "key": "f9955cca177b63716e24d9e8b5d2f26b"
+    }
+  ]
+}
