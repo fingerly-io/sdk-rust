@@ -319,6 +319,8 @@ fn failure_kind(error: &reqwest::Error) -> &'static str {
         "could not connect to the API"
     } else if error.is_body() || error.is_decode() {
         ANSWER_BROKE_OFF
+    } else if hung_up_after_sending(error) {
+        HUNG_UP_AFTER_SENDING
     } else {
         "the request failed"
     }
@@ -327,6 +329,42 @@ fn failure_kind(error: &reqwest::Error) -> &'static str {
 /// The connection failure that happens only once an answer has started, so
 /// the API has seen the request.
 pub(crate) const ANSWER_BROKE_OFF: &str = "the answer broke off";
+
+/// The connection failure that happens only once the whole request was
+/// written, so the API may have seen it.
+pub(crate) const HUNG_UP_AFTER_SENDING: &str = "the connection closed before the answer";
+
+/// Whether the connection was closed or reset while the answer was awaited.
+///
+/// The HTTP/1 stack buffers the whole request before it writes any of it, and
+/// tells the two sides apart only by wording: a failed write is "error writing
+/// a body to connection", a failed read "connection closed before message
+/// completed" or "connection error" over a reset. Only the read side counts.
+/// Any other failure, HTTP/2's included, leaves no telling whether the request
+/// was written, and counts as before sending.
+fn hung_up_after_sending(error: &reqwest::Error) -> bool {
+    let mut source = std::error::Error::source(error);
+    while let Some(cause) = source {
+        match cause.to_string().as_str() {
+            "connection closed before message completed" => return true,
+            "connection error" => {
+                return cause
+                    .source()
+                    .and_then(|io| io.downcast_ref::<std::io::Error>())
+                    .is_some_and(|io| {
+                        matches!(
+                            io.kind(),
+                            std::io::ErrorKind::ConnectionReset
+                                | std::io::ErrorKind::ConnectionAborted
+                                | std::io::ErrorKind::UnexpectedEof
+                        )
+                    });
+            }
+            _ => source = cause.source(),
+        }
+    }
+    false
+}
 
 /// A header as text, when it is present and printable.
 fn header_text(response: &reqwest::Response, name: &str) -> Option<String> {

@@ -30,7 +30,7 @@ use crate::enums::VisitorKind;
 use crate::errors::{Error, Result};
 use crate::models::{AgentAnswer, AgentAnswers, AgentSighting, AiAgent};
 use crate::proxy::{resolve_client_ip, signature_header, ClientIpFn};
-use crate::transport::ANSWER_BROKE_OFF;
+use crate::transport::{ANSWER_BROKE_OFF, HUNG_UP_AFTER_SENDING};
 
 /// The longest user agent reported, in bytes. A longer one is not reported.
 const MAX_HEADER_BYTES: usize = 4096;
@@ -43,6 +43,11 @@ const BATCH_BYTES: usize = 64 * 1024;
 const FLUSH_AFTER: Duration = Duration::from_secs(2);
 /// The deadline for one flush, the whole exchange included.
 const FLUSH_DEADLINE: Duration = Duration::from_secs(5);
+/// How much longer than a flush's deadline `flush()` waits for one already
+/// in flight: six seconds in all.
+const FLUSH_WAIT_MARGIN: Duration = Duration::from_secs(1);
+/// The longest an answer is kept, whatever `ttl` the server gave.
+const MAX_TTL_SECONDS: u64 = 86_400;
 /// Pending and in-flight items together never pass this.
 const MAX_PENDING: usize = 1000;
 /// The largest count the server accepts for one item.
@@ -51,6 +56,9 @@ const MAX_COUNT: u64 = 1_000_000;
 const AUTH_PAUSE: Duration = Duration::from_secs(60);
 /// How long a `429` without `Retry-After` pauses flushing.
 const RATE_LIMIT_PAUSE: Duration = Duration::from_secs(60);
+/// The shortest pause a `429` causes, even with a `Retry-After` of `0` or a
+/// date already past.
+const MIN_RATE_LIMIT_PAUSE: Duration = Duration::from_secs(1);
 /// The first and the longest wait after a `503` or a failed connection.
 const BACKOFF_START: Duration = Duration::from_secs(1);
 const BACKOFF_MAX: Duration = Duration::from_secs(60);
@@ -382,7 +390,7 @@ impl State {
             if ttl == 0 {
                 continue;
             }
-            if let Some(expires) = now.checked_add(Duration::from_secs(ttl)) {
+            if let Some(expires) = now.checked_add(Duration::from_secs(ttl.min(MAX_TTL_SECONDS))) {
                 self.cache.insert(item.key, Arc::new(answer), expires);
             }
         }
@@ -703,9 +711,14 @@ impl Inner {
     }
 
     /// Sends every pending batch, after any flush in flight, until the buffer
-    /// is empty, a pause begins or a batch fails.
+    /// is empty, a pause begins or a batch fails. It waits at most a second
+    /// past one flush's deadline for the flush in flight, and returns with
+    /// nothing sent when that one is still out.
     async fn flush_all(&self) {
-        let _flight = self.flight.lock().await;
+        let wait = self.deadline + FLUSH_WAIT_MARGIN;
+        let Ok(_flight) = tokio::time::timeout(wait, self.flight.lock()).await else {
+            return;
+        };
         while self.send_batch().await == Sent::Yes {}
     }
 
@@ -772,7 +785,9 @@ impl Inner {
                 }
                 429 => {
                     let wait = match (api.retry_after, api.rate_limit_scope()) {
-                        (Some(seconds), _) => Duration::from_secs(seconds),
+                        (Some(seconds), _) => {
+                            Duration::from_secs(seconds).max(MIN_RATE_LIMIT_PAUSE)
+                        }
                         (None, Some("daily")) => until_next_utc_day(SystemTime::now()),
                         (None, _) => RATE_LIMIT_PAUSE,
                     };
@@ -794,9 +809,15 @@ impl Inner {
             // The deadline passed once the request was out: the server may
             // have counted it, and a retry would count it twice.
             Err(Error::Timeout) => None,
-            // The answer started and broke off: the server saw the request.
-            Err(Error::Connection { message }) if message == ANSWER_BROKE_OFF => None,
-            // No answer at all: nothing was counted.
+            // The answer started and broke off, or the connection was closed
+            // or reset once the request was out: the server saw the request.
+            Err(Error::Connection { message })
+                if message == ANSWER_BROKE_OFF || message == HUNG_UP_AFTER_SENDING =>
+            {
+                None
+            }
+            // No connection, a request that could not be written in full, or
+            // no telling whether it was (HTTP/2): nothing known to be counted.
             Err(Error::Connection { .. }) => {
                 state.back_off(now);
                 state.keep(taken);
@@ -934,8 +955,9 @@ impl AgentSightings {
     }
 
     /// Sends everything buffered now, after any flush already in flight,
-    /// until the buffer is empty, a pause begins or a batch fails. It never
-    /// returns an error. Serverless and edge handlers call it before the
+    /// until the buffer is empty, a pause begins or a batch fails. It waits
+    /// at most 6 seconds for a flush in flight, and never returns an error.
+    /// Serverless and edge handlers call it before the
     /// invocation ends.
     pub async fn flush(&self) {
         self.inner.flush_all().await;

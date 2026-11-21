@@ -1033,3 +1033,161 @@ async fn decodes_the_agent_sightings_fixture() {
     );
     assert!(googlebot.ai().is_none());
 }
+
+/// How a raw test server ends a connection instead of answering.
+#[derive(Clone, Copy, Debug)]
+enum Hangup {
+    /// Reads the whole request, then closes without a word.
+    Close,
+    /// Reads the whole request, then resets the connection.
+    Reset,
+    /// Reads the request head only, then resets the connection.
+    ResetBeforeBody,
+    /// Reads the whole request, starts a 200 and stops short of its body.
+    CutShort,
+}
+
+/// A server on a real socket that hangs up on every request as `hangup`
+/// says, and counts the requests whose head it read.
+async fn hanging_up(hangup: Hangup) -> (String, Arc<std::sync::atomic::AtomicUsize>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+    let seen = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = seen.clone();
+    tokio::spawn(async move {
+        while let Ok((stream, _)) = listener.accept().await {
+            let counted = counted.clone();
+            tokio::spawn(async move {
+                let mut received = Vec::new();
+                let mut buffer = [0u8; 16 * 1024];
+                loop {
+                    if stream.readable().await.is_err() {
+                        return;
+                    }
+                    match stream.try_read(&mut buffer) {
+                        Ok(0) => return,
+                        Ok(n) => received.extend_from_slice(&buffer[..n]),
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => continue,
+                        Err(_) => return,
+                    }
+                    let Some(end) = received.windows(4).position(|w| w == b"\r\n\r\n") else {
+                        continue;
+                    };
+                    if matches!(hangup, Hangup::ResetBeforeBody) {
+                        break;
+                    }
+                    let head = String::from_utf8_lossy(&received[..end]).to_ascii_lowercase();
+                    let length: usize = head
+                        .lines()
+                        .find_map(|line| line.strip_prefix("content-length:"))
+                        .map_or(0, |value| value.trim().parse().unwrap());
+                    if received.len() >= end + 4 + length {
+                        break;
+                    }
+                }
+                counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                match hangup {
+                    Hangup::Close => {}
+                    Hangup::Reset | Hangup::ResetBeforeBody => stream.set_zero_linger().unwrap(),
+                    Hangup::CutShort => {
+                        let answer = b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\
+                            content-length: 500\r\n\r\n{\"rules_version\":";
+                        let _ = stream.writable().await;
+                        let _ = stream.try_write(answer);
+                    }
+                }
+                drop(stream);
+            });
+        }
+    });
+    (base_url, seen)
+}
+
+#[tokio::test]
+async fn a_hangup_once_the_request_was_written_drops_the_batch() {
+    for hangup in [
+        Hangup::Close,
+        Hangup::Reset,
+        Hangup::ResetBeforeBody,
+        Hangup::CutShort,
+    ] {
+        let (base_url, seen) = hanging_up(hangup).await;
+        let clock = FakeClock::new();
+        let (sightings, failures) = component(&base_url, &clock);
+        sightings.report(&parts("one", "198.51.100.1"), &html());
+        sightings.flush().await;
+        assert_eq!(
+            seen.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "{hangup:?}: the request never arrived"
+        );
+        assert!(
+            pending_counts(&sightings).is_empty(),
+            "{hangup:?}: a written batch was kept"
+        );
+        let state = sightings.inner().state();
+        assert!(state.paused_until.is_none(), "{hangup:?}: backed off");
+        assert_eq!(state.in_flight, 0);
+        assert!(failures.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn a_retry_after_of_zero_or_past_pauses_at_least_a_second() {
+    for (retry_after, expected) in [
+        ("0", Duration::from_secs(1)),
+        ("Sun, 06 Nov 1994 08:49:37 GMT", Duration::from_secs(1)),
+        // Unreadable counts as missing: a minute without a daily scope.
+        ("-5", Duration::from_secs(60)),
+        ("soon", Duration::from_secs(60)),
+    ] {
+        let server =
+            TestServer::always(error(429, "rate_limited").header("retry-after", retry_after)).await;
+        let clock = FakeClock::new();
+        let (sightings, _) = component(&server.base_url, &clock);
+        sightings.report(&parts("one", "198.51.100.1"), &html());
+        let now = (clock.clock())();
+        sightings.flush().await;
+        let paused = sightings.inner().state().paused_until.unwrap() - now;
+        assert_eq!(paused, expected, "Retry-After {retry_after:?}");
+        assert_eq!(pending_counts(&sightings), vec![1]);
+    }
+}
+
+#[tokio::test]
+async fn a_ttl_is_kept_for_at_most_a_day() {
+    let server = TestServer::always(ok("r1", &[10 * 86_400])).await;
+    let clock = FakeClock::new();
+    let (sightings, _) = component(&server.base_url, &clock);
+    let first = request("GPTBot/1.4", "20.171.206.9");
+    sightings.report(&parts("GPTBot/1.4", "20.171.206.9"), &html());
+    sightings.flush().await;
+    clock.advance(Duration::from_secs(86_399));
+    assert!(!sightings.lookup(&first).is_unknown());
+    clock.advance(Duration::from_secs(1));
+    assert_eq!(
+        sightings.lookup(&first),
+        AgentLookup::Unknown,
+        "an answer outlived a day"
+    );
+}
+
+#[tokio::test]
+async fn flush_waits_at_most_a_second_past_the_deadline_for_a_flush_in_flight() {
+    let server = TestServer::always(ok("r1", &[600])).await;
+    let clock = FakeClock::new();
+    let (sightings, _) = component(&server.base_url, &clock);
+    sightings.report(&parts("one", "198.51.100.1"), &html());
+    // A flush in flight that never ends.
+    let _in_flight = sightings.inner().flight.lock().await;
+    let started = Instant::now();
+    sightings.flush().await;
+    let waited = started.elapsed();
+    // The test deadline is 300 ms, so the wait is 1.3 s.
+    assert!(
+        waited >= Duration::from_millis(1_250) && waited < Duration::from_secs(3),
+        "{waited:?}"
+    );
+    assert_eq!(server.request_count(), 0);
+    assert_eq!(pending_counts(&sightings), vec![1]);
+}
