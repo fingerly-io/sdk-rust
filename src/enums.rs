@@ -172,6 +172,10 @@ wire_enum! {
         BrowserTampering = "browser_tampering",
         /// Group and detector: a report too thin to identify anyone.
         FingerprintSuppressed = "fingerprint_suppressed",
+        /// Group and detector: a browser in a non-default, opt-in
+        /// anti-fingerprinting mode that replaces audio, graphics, text metrics
+        /// and locale readings with synthetic noise or empty answers.
+        IdentityObfuscated = "identity_obfuscated",
         /// Group and detector: an open inspector or attached debugger.
         DeveloperTools = "developer_tools",
         /// Group and detector: a session driven over remote desktop software.
@@ -216,8 +220,6 @@ wire_enum! {
         ResidentialProxyHighConfidence = "residential_proxy_high_confidence",
         /// Detector: a commercial VPN endpoint.
         VpnPublic = "vpn_public",
-        /// Detector: an address country that disagrees with the device timezone.
-        VpnTimezone = "vpn_timezone",
         /// Detector: a privacy relay.
         VpnRelay = "vpn_relay",
         /// Detector: a VPN on a mobile carrier network.
@@ -273,6 +275,9 @@ wire_enum! {
         /// Detector: a client that says it is not a browser, or a known bad
         /// crawler.
         BadBot = "bad_bot",
+        /// Detector: a client that names a known AI agent and arrives from
+        /// outside the addresses that agent's operator publishes.
+        AiSpoofed = "ai_spoofed",
         /// Detector: a browser report with no `Sec-Fetch-*` headers.
         FetchMetadataMissing = "fetch_metadata_missing",
         /// Detector: a browser report with no freshness ticket.

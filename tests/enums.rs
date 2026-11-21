@@ -54,6 +54,7 @@ fn signal_wire_values() {
             "frida_detected",
             "browser_tampering",
             "fingerprint_suppressed",
+            "identity_obfuscated",
             "developer_tools",
             "remote_control",
             "bot",
@@ -74,7 +75,6 @@ fn signal_wire_values() {
             "residential_proxy_medium_confidence",
             "residential_proxy_high_confidence",
             "vpn_public",
-            "vpn_timezone",
             "vpn_relay",
             "vpn_mobile",
             "vpn_os_mismatch",
@@ -102,6 +102,7 @@ fn signal_wire_values() {
             "antidetect_browser",
             "automation",
             "bad_bot",
+            "ai_spoofed",
             "fetch_metadata_missing",
             "web_ticket_missing",
             "web_ticket_invalid",
@@ -110,7 +111,7 @@ fn signal_wire_values() {
             "probe_errors",
         ],
     );
-    assert_eq!(Signal::KNOWN.len(), 73);
+    assert_eq!(Signal::KNOWN.len(), 74);
 }
 
 #[test]
