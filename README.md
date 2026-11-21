@@ -213,6 +213,11 @@ and every enum is `#[non_exhaustive]`:
 | `AttestSkippedReason` | `Attestation::attest_skipped` | `NotOffered`, `Unsupported`, `ChallengeUnavailable`, `KeyError`, `Timeout`, `Backoff`, `InstallUnavailable` |
 | `EventState` | `Event::state` | `Pending`, `Enriched`, `Unavailable` |
 | `AnonymityNetwork` | `Event::anonymity_network` | `Tor`, `Relay`, `Vpn`, `Proxy`, `Hosting` |
+| `VisitorKind` | `Event::visitor_kind`, `EventListParams::kind` | `Human`, `AiBot`, `Automation`, `SearchCrawler` |
+| `AiPurpose` | `AiAgent::purpose`, `EventListParams::ai_purpose` | `Training`, `Search`, `UserFetch`, `Agent` |
+| `AiRuntime` | `AiAgent::runtime` | `ProviderCloud`, `HostedBrowser`, `UserDevice` |
+| `AiVerificationMethod` | `AiVerification::method` | `Signature`, `IpList`, `ReverseDns`, `None` |
+| `AiVerificationResult` | `AiVerification::result` | `Pass`, `Fail`, `NotAttempted` |
 | `Environment` | `Event::environment` | `Production`, `Staging`, `Development` |
 | `RiskPlatform` | `Event::platform`, `EventRiskReport::platform` | `Web`, `Ios`, `Android` |
 | `RiskSource` | `EventRiskReport::source` | `Key`, `Organization`, `Default` |
@@ -226,6 +231,36 @@ device owns).
 
 `Event::project_id` names the Fingerly project the event belongs to, as a UUID
 string. It is `None` when the server is older than projects.
+
+`Event::visitor_kind` says what sort of client made the request. When it is
+`VisitorKind::AiBot`, `Event::ai` is an `AiAgent` naming the agent: `name` and
+`provider` (open strings, such as `ChatGPT-User` and `OpenAI`), `purpose`,
+`runtime`, `declared`, and `verification` with its `method` and `result`. On
+every other event `ai` is `None`. The identity comes from the user agent, which
+any client can copy, and is not verified yet: `verification` is
+`AiVerificationMethod::None` / `AiVerificationResult::NotAttempted`. Only
+clients that run the browser SDK produce events, so a crawler that does not
+run JavaScript never appears. `EventListParams` narrows a listing by `kind`,
+`ai_provider` (exact and case sensitive, as events name it) and `ai_purpose`,
+next to `visitor` and `level`:
+
+```rust
+use fingerly::{AiPurpose, EventListParams, VisitorKind};
+
+let page = fingerly
+    .events()
+    .list(
+        EventListParams::new()
+            .kind(VisitorKind::AiBot)
+            .ai_purpose(AiPurpose::UserFetch),
+    )
+    .await?;
+for event in &page.rows {
+    if let Some(ai) = &event.ai {
+        println!("{} {}", ai.provider, ai.name);
+    }
+}
+```
 
 ### Verify a backend action
 
