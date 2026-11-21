@@ -1,6 +1,82 @@
 {
   "components": {
     "schemas": {
+      "AIAgentOut": {
+        "properties": {
+          "declared": {
+            "description": "True when the agent named itself, in its user agent or a signature",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "The agent as its operator names it, such as GPTBot or Claude-User",
+            "type": "string"
+          },
+          "provider": {
+            "description": "The company that operates the agent, such as OpenAI, Anthropic or Google",
+            "type": "string"
+          },
+          "purpose": {
+            "description": "What the operator says the traffic is for: training (collecting content to train models), search (indexing for an AI answer or search product), user_fetch (reading a page a person asked an assistant to read) or agent (driving a browser on a person's behalf). New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "training",
+              "search",
+              "user_fetch",
+              "agent"
+            ],
+            "type": "string"
+          },
+          "runtime": {
+            "description": "Where the agent runs: provider_cloud (the operator's own infrastructure), hosted_browser (a third party's cloud browser) or user_device (a person's own browser). New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "provider_cloud",
+              "hosted_browser",
+              "user_device"
+            ],
+            "type": "string"
+          },
+          "verification": {
+            "$ref": "#/components/schemas/AIVerificationOut",
+            "description": "How the agent's claimed identity was checked, and what that found"
+          }
+        },
+        "required": [
+          "declared",
+          "name",
+          "provider",
+          "purpose",
+          "runtime",
+          "verification"
+        ],
+        "type": "object"
+      },
+      "AIVerificationOut": {
+        "properties": {
+          "method": {
+            "description": "signature (a signed request), ip_list (the operator's published address ranges), reverse_dns (a reverse lookup confirmed forward) or none. New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "signature",
+              "ip_list",
+              "reverse_dns",
+              "none"
+            ],
+            "type": "string"
+          },
+          "result": {
+            "description": "pass (the claim held), fail (it was checked and did not hold) or not_attempted. New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "pass",
+              "fail",
+              "not_attempted"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "method",
+          "result"
+        ],
+        "type": "object"
+      },
       "AttestEnvelope": {
         "properties": {
           "assertion": {
@@ -317,6 +393,17 @@
           "agent_version": {
             "type": "string"
           },
+          "ai": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AIAgentOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present when visitor_kind is ai_bot: who operates the agent, what its traffic is for, and how far its claim was checked"
+          },
           "anonymity_network": {
             "description": "New values can be added within API v1, so accept values not listed here.",
             "enum": [
@@ -496,6 +583,7 @@
               "cloned_app",
               "browser_tampering",
               "fingerprint_suppressed",
+              "identity_obfuscated",
               "developer_tools",
               "device_farm",
               "bot",
@@ -632,6 +720,10 @@
             ],
             "type": "string"
           },
+          "continuity": {
+            "description": "Web only: session asks for next_seal with an identified answer, which the page keeps for the life of its tab and sends back as seal. Omitted, no seal is issued and the page keeps nothing",
+            "type": "string"
+          },
           "op": {
             "description": "Empty for a report. ticket asks for a web freshness ticket instead: a public key on the web only, with a body of v, op and sdk, answered 200 with ticket and expires_at, never charged",
             "type": "string"
@@ -639,6 +731,10 @@
           "sdk": {
             "$ref": "#/components/schemas/SDKInfo",
             "description": "Which SDK collected these signals"
+          },
+          "seal": {
+            "description": "Web only, with continuity session: the next_seal of the previous answer in this tab. Bound to the project, the page origin and the browser's profile, valid for 30 minutes and renewed by each answer for at most 12 hours. One that does not verify is ignored",
+            "type": "string"
           },
           "signals": {
             "additionalProperties": {},
@@ -667,6 +763,17 @@
       },
       "IdentifyOut": {
         "properties": {
+          "ai": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AIAgentOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present when visitor_kind is ai_bot: who operates the agent, what its traffic is for, and how far its claim was checked. Only answered to a secret key called directly"
+          },
           "attest_key_id": {
             "description": "Native only, present whenever attest was sent: the key_id the server evaluated, copied from attest.key_id",
             "type": "string"
@@ -699,6 +806,17 @@
               }
             ],
             "description": "Fresh attestation challenge ticket and dynamic offer flags for the next native submission"
+          },
+          "next_seal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WebSealOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Web only, when the report asked for continuity session and a private window was identified: the session seal to send as seal on the next report from this tab"
           },
           "next_ticket": {
             "anyOf": [
@@ -763,6 +881,16 @@
           "visitor_is_new": {
             "description": "Whether this is the first time this visitor has been seen",
             "type": "boolean"
+          },
+          "visitor_kind": {
+            "description": "human, ai_bot, automation or search_crawler. Only answered to a secret key called directly; everyone else reads it on the server-side event read, webhooks and the dashboard. New values can be added within API v1, so accept values not listed here.",
+            "enum": [
+              "human",
+              "ai_bot",
+              "automation",
+              "search_crawler"
+            ],
+            "type": "string"
           }
         },
         "required": [
@@ -803,6 +931,7 @@
               "cloned_app",
               "browser_tampering",
               "fingerprint_suppressed",
+              "identity_obfuscated",
               "developer_tools",
               "device_farm",
               "bot",
@@ -840,6 +969,7 @@
               "high_activity",
               "virtual_machine",
               "fingerprint_suppressed",
+              "identity_obfuscated",
               "embedded_web_view",
               "privacy_settings",
               "remote_control",
@@ -848,7 +978,6 @@
               "device_inconsistent",
               "report_incomplete",
               "vpn_public",
-              "vpn_timezone",
               "vpn_os_mismatch",
               "vpn_relay",
               "vpn_low_confidence",
@@ -936,6 +1065,10 @@
             ],
             "type": "string"
           },
+          "continuity": {
+            "description": "Web only: session asks for next_seal with an identified answer, which the page keeps for the life of its tab and sends back as seal. Omitted, no seal is issued and the page keeps nothing",
+            "type": "string"
+          },
           "op": {
             "description": "Empty for a report. ticket asks for a web freshness ticket instead: a public key on the web only, with a body of v, op and sdk, answered 200 with ticket and expires_at, never charged",
             "type": "string"
@@ -943,6 +1076,10 @@
           "sdk": {
             "$ref": "#/components/schemas/SDKInfo",
             "description": "Which SDK collected these signals"
+          },
+          "seal": {
+            "description": "Web only, with continuity session: the next_seal of the previous answer in this tab. One that does not verify is ignored",
+            "type": "string"
           },
           "signals": {
             "additionalProperties": {},
@@ -1354,6 +1491,7 @@
                 "high_activity",
                 "virtual_machine",
                 "fingerprint_suppressed",
+                "identity_obfuscated",
                 "embedded_web_view",
                 "privacy_settings",
                 "remote_control",
@@ -1362,7 +1500,6 @@
                 "device_inconsistent",
                 "report_incomplete",
                 "vpn_public",
-                "vpn_timezone",
                 "vpn_os_mismatch",
                 "vpn_relay",
                 "vpn_low_confidence",
@@ -1475,6 +1612,17 @@
           },
           "agent_version": {
             "type": "string"
+          },
+          "ai": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AIAgentOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present when visitor_kind is ai_bot: who operates the agent, what its traffic is for, and how far its claim was checked"
           },
           "anonymity_network": {
             "description": "New values can be added within API v1, so accept values not listed here.",
@@ -1744,7 +1892,7 @@
             "type": "string"
           },
           "last4": {
-            "description": "The tail of the secret, which is all a console ever shows",
+            "description": "The tail of the credential, used when masking secret keys",
             "type": "string"
           },
           "last_used_at": {
@@ -1796,6 +1944,10 @@
           },
           "status": {
             "description": "active or revoked",
+            "type": "string"
+          },
+          "value": {
+            "description": "Full publishable key for kind=public; always omitted for secret keys",
             "type": "string"
           },
           "web_ticket_pow_bits": {
@@ -1910,6 +2062,7 @@
               "cloned_app",
               "browser_tampering",
               "fingerprint_suppressed",
+              "identity_obfuscated",
               "developer_tools",
               "device_farm",
               "bot",
@@ -2000,6 +2153,7 @@
               "high_activity",
               "virtual_machine",
               "fingerprint_suppressed",
+              "identity_obfuscated",
               "embedded_web_view",
               "privacy_settings",
               "remote_control",
@@ -2008,7 +2162,6 @@
               "device_inconsistent",
               "report_incomplete",
               "vpn_public",
-              "vpn_timezone",
               "vpn_os_mismatch",
               "vpn_relay",
               "vpn_low_confidence",
@@ -2281,6 +2434,24 @@
         },
         "required": [
           "erasures"
+        ],
+        "type": "object"
+      },
+      "WebSealOut": {
+        "properties": {
+          "expires_at": {
+            "description": "When the seal stops being accepted, RFC 3339 UTC",
+            "format": "date-time",
+            "type": "string"
+          },
+          "seal": {
+            "description": "Unpadded base64url seal, sent as seal on the next report from this tab",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expires_at",
+          "seal"
         ],
         "type": "object"
       },
@@ -2684,6 +2855,42 @@
                 "low",
                 "medium",
                 "high"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "human, ai_bot, automation or search_crawler",
+            "in": "query",
+            "name": "kind",
+            "schema": {
+              "enum": [
+                "human",
+                "ai_bot",
+                "automation",
+                "search_crawler"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "An AI agent's operator, exactly as events name it, such as OpenAI",
+            "in": "query",
+            "name": "ai_provider",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "training, search, user_fetch or agent",
+            "in": "query",
+            "name": "ai_purpose",
+            "schema": {
+              "enum": [
+                "training",
+                "search",
+                "user_fetch",
+                "agent"
               ],
               "type": "string"
             }
