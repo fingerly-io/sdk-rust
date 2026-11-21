@@ -237,11 +237,17 @@ string. It is `None` when the server is older than projects.
 `VisitorKind::AiBot`, `Event::ai` is an `AiAgent` naming the agent: `name` and
 `provider` (open strings, such as `ChatGPT-User` and `OpenAI`), `purpose`,
 `runtime`, `declared`, and `verification` with its `method` and `result`. On
-every other event `ai` is `None`. The identity comes from the user agent, which
-any client can copy, and is not verified yet: `verification` is
-`AiVerificationMethod::None` / `AiVerificationResult::NotAttempted`. Only
-clients that run the browser SDK produce events, so a crawler that does not
-run JavaScript never appears. `EventListParams` narrows a listing by `kind`,
+every other event `ai` is `None`. The agent is named by a Web Bot Auth
+signature when the request carried one, otherwise by its user agent.
+`verification` says how far that was checked:
+`AiVerificationMethod::Signature` (the operator's published key signed the
+request) or `AiVerificationMethod::IpList` (the address is inside the
+operator's published ranges), with result `AiVerificationResult::Pass`,
+`AiVerificationResult::Fail` (the name was borrowed), or
+`AiVerificationResult::NotAttempted` with method `AiVerificationMethod::None`
+(the operator publishes nothing to check against, or it could not be checked;
+the name is then only the client's claim). Only clients that run the browser
+SDK produce events, so a crawler that does not run JavaScript never appears. `EventListParams` narrows a listing by `kind`,
 `ai_provider` (exact and case sensitive, as events name it) and `ai_purpose`,
 next to `visitor` and `level`:
 

@@ -28,8 +28,17 @@ pub struct AiVerification {
 /// The AI agent behind an [`VisitorKind::AiBot`] event: who operates it, what
 /// its traffic is for and how far its claim was checked.
 ///
-/// The identity comes from the user agent, which any client can copy, and is
-/// not verified yet.
+/// The agent is named by a Web Bot Auth signature when the request carried
+/// one, otherwise by its user agent. [`verification`](Self::verification) says
+/// how far that was checked: [`AiVerificationMethod::Signature`] (the
+/// operator's published key signed the request) or
+/// [`AiVerificationMethod::IpList`] (the address is inside the operator's
+/// published ranges), with result [`AiVerificationResult::Pass`],
+/// [`AiVerificationResult::Fail`] (the name was borrowed), or
+/// [`AiVerificationResult::NotAttempted`] with method
+/// [`AiVerificationMethod::None`] (the operator publishes nothing to check
+/// against, or it could not be checked; the name is then only the client's
+/// claim).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[non_exhaustive]
 pub struct AiAgent {
@@ -319,8 +328,9 @@ pub struct Event {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visitor_kind: Option<VisitorKind>,
     /// The AI agent, present only when [`Event::visitor_kind`] is
-    /// [`VisitorKind::AiBot`]. Its identity comes from the user agent, which
-    /// any client can copy, and is not verified yet.
+    /// [`VisitorKind::AiBot`]. The agent is named by a Web Bot Auth signature
+    /// when the request carried one, otherwise by its user agent; see
+    /// [`AiAgent::verification`] for how far that was checked.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ai: Option<AiAgent>,
 
