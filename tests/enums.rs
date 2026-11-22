@@ -48,6 +48,7 @@ fn signal_wire_values() {
             "virtual_machine",
             "jailbroken_device",
             "rooted_device",
+            "bootloader_unlocked",
             "cloned_app",
             "device_farm",
             "mitm_attack",
@@ -111,7 +112,7 @@ fn signal_wire_values() {
             "probe_errors",
         ],
     );
-    assert_eq!(Signal::KNOWN.len(), 74);
+    assert_eq!(Signal::KNOWN.len(), 75);
 }
 
 #[test]
