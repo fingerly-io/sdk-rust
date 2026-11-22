@@ -5,7 +5,7 @@ mod common;
 use std::time::Duration;
 
 use common::{event_body, not_found_body, pending_body, Canned, TestServer, SECRET_KEY};
-use fingerly::{Error, EventListParams, Fingerly, SuspectLevel};
+use fingerly::{AiPurpose, Error, EventListParams, Fingerly, SuspectLevel, VisitorKind};
 
 fn client(server: &TestServer) -> Fingerly {
     Fingerly::builder(SECRET_KEY)
@@ -158,7 +158,10 @@ async fn sends_only_the_filters_that_were_set() {
                 .page(2)
                 .limit(25)
                 .visitor("vis_1")
-                .level(SuspectLevel::High),
+                .level(SuspectLevel::High)
+                .kind(VisitorKind::AiBot)
+                .ai_provider("OpenAI")
+                .ai_purpose(AiPurpose::UserFetch),
         )
         .await
         .unwrap();
@@ -171,6 +174,9 @@ async fn sends_only_the_filters_that_were_set() {
         "limit=25",
         "visitor=vis_1",
         "level=high",
+        "kind=ai_bot",
+        "ai_provider=OpenAI",
+        "ai_purpose=user_fetch",
     ] {
         assert!(query.contains(expected), "{query} is missing {expected}");
     }

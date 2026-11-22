@@ -1,5 +1,73 @@
 # Changelog
 
+## 0.5.0
+
+- Added `AgentSightings`, which reports the pages your server served to
+  Fingerly in the background, so AI crawlers and fetchers that never run a
+  page's JavaScript are seen, and remembers what the API answered about each.
+  `layer()` is a `tower::Layer` that axum mounts directly: it reports each
+  in-scope response after it is produced, never delays it, and puts an
+  `AgentLookup` in the request's extensions. `lookup(&request)` and
+  `lookup_parts(&parts)` answer from memory only, with `AgentLookup::Known`
+  or `AgentLookup::Unknown` ("serve as usual"). The builder takes the same
+  `client_ip` callback as the proxy, plus `cache_capacity`, `content_types`,
+  `include_paths`, `exclude_paths` and `on_error`; `report(&parts, headers)`
+  serves frameworks that do not speak tower, `flush()` serverless handlers and
+  `close()` shutdown, and `dropped()` counts the requests not buffered. It
+  fails open on every API failure, holds at most 1000 pending requests, and
+  `AgentSightingsErrorKind` names each failure it handled.
+- Added `Fingerly::agents()` with `AgentsClient::sightings(&items)`, the single
+  call underneath, and the `AgentSighting`, `AgentAnswer` and `AgentAnswers`
+  models. `ApiError::rate_limit_scope()` and `Error::rate_limit_scope()` read
+  `Fingerly-RateLimit-Scope` on a `429`.
+- Breaking: `Event::visitor_kind` is a `VisitorKind` (`Human`, `AiBot`,
+  `Automation`, `SearchCrawler`) rather than a string, and `Event::ai` is the
+  `AiAgent` behind an AI agent event: its `name`, `provider`, `purpose`
+  (`AiPurpose`), `runtime` (`AiRuntime`), whether it `declared` itself, and
+  its `verification` (`AiVerificationMethod` and `AiVerificationResult`).
+- `EventListParams` filters by `kind`, `ai_provider` and `ai_purpose`.
+- `Signal` adds `AiSpoofed` and `IdentityObfuscated`. Breaking: `VpnTimezone`
+  is removed.
+- `FingerlyProxy` forwards the Web Bot Auth `Signature`, `Signature-Input` and
+  `Signature-Agent` headers, each dropped when over 4096 bytes.
+- Agent sightings never stop reporting because a `flush()` or `close()` was
+  cancelled (for example under a `tokio::time::timeout`): the cancelled batch
+  is dropped and its place in the buffer freed, instead of filling the buffer
+  for good.
+- On a Tokio runtime built without timers, the sightings background task is
+  started again at most once a minute and reported as
+  `AgentSightingsErrorKind::FlusherStopped`, instead of panicking on every
+  request.
+- A `429` pauses agent sightings for at most a day, whatever its
+  `Retry-After` asks for, so a huge value can no longer stop reporting for
+  the life of the process.
+- A Web Bot Auth header that passes 4096 bytes once each byte that is not
+  UTF-8 is replaced with U+FFFD is left out of a sighting, as a longer one
+  is, so a single visitor's request can no longer make the API refuse the
+  whole batch it was sent in.
+- A `Host` over 4096 bytes as sent is left out of a sighting, as a longer
+  Web Bot Auth header is, and a request whose method is over 4096 bytes is
+  not reported, as one with a longer user agent is not, so every batch fits
+  the API's request size limit and none is refused for one visitor's
+  request.
+- An answer item `AgentAnswers` cannot read keeps its place as
+  `AgentAnswer::default()` (a `ttl` of 0, never remembered), so one
+  malformed item leaves only its own request unknown instead of dropping
+  the whole batch.
+- `VisitorKind::Unknown` names the answer for a reported request the server
+  could not use. It comes with a `ttl` of 0, so it is never remembered and
+  that request's lookup stays `AgentLookup::Unknown`; the rest of the batch
+  is answered as usual. A `422` now means no item in the batch was usable.
+- `flush()` and `close()` send their own batches after the one in flight on
+  a slow API, instead of waiting out the background task's run of every due
+  batch and returning with nothing sent.
+- The README example closes `AgentSightings` behind axum's
+  `with_graceful_shutdown` on SIGTERM and Ctrl-C, so buffered sightings are
+  sent when the process is stopped.
+- The README and `DeviceCheckClient` describe one read and one write token
+  per identification: a check-then-mark flow reads and writes on the same
+  request ID.
+
 ## 0.4.1
 
 - Each `AttestSkippedReason` variant documents when the iOS and Android SDKs

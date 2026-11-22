@@ -70,14 +70,15 @@ pub struct DeviceCheckWriteResult {
 
 /// Reads and writes the DeviceCheck bits of the device behind an iOS event.
 ///
-/// Fingerly holds the DeviceCheck token of an iOS identification for one
-/// hour, and each token pays for one Apple call: a read or a write, never
-/// both. To check a device and then mark it, read on one identification and
-/// write on the next.
+/// Fingerly holds two DeviceCheck tokens of an iOS identification for one
+/// hour, a read token and a write token, and each pays for one Apple call: a
+/// read spends the read token, a write the write token. To check a device and
+/// then mark it, read and write with the same request ID.
 ///
 /// A `503` or a lost answer leaves the token held. The client then retries
 /// the identical request, which is the only retry the API accepts for a held
-/// token: another operation or other bits answer `409 device_check_spent`.
+/// token: a second read, or a write with other bits, answers
+/// `409 device_check_spent`.
 ///
 /// Reached as [`Fingerly::device_check`]; it is never constructed directly.
 ///
@@ -92,7 +93,7 @@ impl DeviceCheckClient {
         DeviceCheckClient { transport }
     }
 
-    /// Spends the event's held token to read the device's two bits.
+    /// Spends the event's held read token to read the device's two bits.
     ///
     /// ```no_run
     /// # async fn run(fingerly: fingerly::Fingerly) -> fingerly::Result<()> {
@@ -115,7 +116,7 @@ impl DeviceCheckClient {
             .map_err(|error| Error::decode(format!("device check bits: {error}")))
     }
 
-    /// Spends the event's held token to set `bit0`, `bit1` or both.
+    /// Spends the event's held write token to set `bit0`, `bit1` or both.
     ///
     /// A write that names neither bit is refused with [`Error::Config`] and
     /// nothing is sent.

@@ -25,7 +25,7 @@
 //! | Feature | Default | What it adds |
 //! | --- | --- | --- |
 //! | `client` | yes | [`Fingerly`], event reads and DeviceCheck bits, over reqwest and Tokio. |
-//! | `proxy` | yes | [`FingerlyProxy`], a [`tower_service::Service`]. Implies `client`. |
+//! | `proxy` | yes | [`FingerlyProxy`], a [`tower_service::Service`], and [`AgentSightings`], a [`tower_layer::Layer`]. Implies `client`. |
 //! | `rustls` | yes | TLS through rustls. |
 //! | `native-tls` | no | TLS through the platform's own stack instead. |
 //! | `time` | no | [`OffsetDateTime`](time::OffsetDateTime) accessors for timestamps. |
@@ -38,6 +38,8 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
 
+#[cfg(feature = "client")]
+mod agents;
 #[cfg(feature = "client")]
 mod client;
 #[cfg(feature = "client")]
@@ -53,10 +55,15 @@ mod models;
 mod pool;
 #[cfg(feature = "proxy")]
 mod proxy;
+#[cfg(feature = "proxy")]
+mod sightings;
 #[cfg(feature = "client")]
 mod transport;
 mod webhooks;
 
+#[cfg(feature = "client")]
+#[cfg_attr(docsrs, doc(cfg(feature = "client")))]
+pub use crate::agents::AgentsClient;
 #[cfg(feature = "client")]
 #[cfg_attr(docsrs, doc(cfg(feature = "client")))]
 pub use crate::client::{Fingerly, FingerlyBuilder};
@@ -76,16 +83,23 @@ pub use crate::events::{
 pub use crate::proxy::{
     ClientIpFn, FingerlyProxy, FingerlyProxyBuilder, ProxyError, ProxyErrorHook, ProxyErrorKind,
 };
+#[cfg(feature = "proxy")]
+#[cfg_attr(docsrs, doc(cfg(feature = "proxy")))]
+pub use crate::sightings::{
+    AgentLookup, AgentSightings, AgentSightingsBuilder, AgentSightingsError,
+    AgentSightingsErrorHook, AgentSightingsErrorKind, AgentSightingsLayer, AgentSightingsService,
+};
 
 pub use crate::enums::{
-    AnonymityNetwork, AttestSkippedReason, AttestationState, AttestationStatus, Confidence,
-    Environment, EventState, RiskPlatform, RiskSource, Signal, SuspectLevel, WebhookEnvironment,
+    AiPurpose, AiRuntime, AiVerificationMethod, AiVerificationResult, AnonymityNetwork,
+    AttestSkippedReason, AttestationState, AttestationStatus, Confidence, Environment, EventState,
+    RiskPlatform, RiskSource, Signal, SuspectLevel, VisitorKind, WebhookEnvironment,
     WebhookEventType,
 };
 pub use crate::errors::{ApiError, Error, Result};
 pub use crate::models::{
-    Attestation, Event, EventDocument, EventDocumentSdk, EventPage, EventRiskReport,
-    EventRiskTrigger, EventTrigger,
+    AgentAnswer, AgentAnswers, AgentSighting, AiAgent, AiVerification, Attestation, Event,
+    EventDocument, EventDocumentSdk, EventPage, EventRiskReport, EventRiskTrigger, EventTrigger,
 };
 pub use crate::webhooks::{
     verify_webhook, WebhookEvent, WebhookVerifier, DEFAULT_WEBHOOK_TOLERANCE,

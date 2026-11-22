@@ -14,8 +14,9 @@ use std::time::Duration;
 
 use common::{Canned, TestServer, SECRET_KEY};
 use fingerly::{
+    AgentSighting, AiPurpose, AiRuntime, AiVerificationMethod, AiVerificationResult,
     AttestSkippedReason, Attestation, AttestationState, AttestationStatus, Error, Event,
-    EventListParams, Fingerly, Signal, WebhookVerifier,
+    EventListParams, Fingerly, Signal, VisitorKind, WebhookVerifier,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -159,9 +160,117 @@ async fn reads_every_event_fixture() {
                 .expect("parsed document");
             assert_eq!(parsed.request_id, event.request_id, "{}", fixture.name);
         }
+        // `ai` is present exactly when the server sent it.
+        assert_eq!(
+            event.ai.is_some(),
+            fixture.body.get("ai").is_some_and(|a| !a.is_null()),
+            "{}",
+            fixture.name
+        );
         // Whatever this build did not model is still reachable.
         assert_eq!(event.raw, fixture.body, "{}", fixture.name);
     }
+}
+
+fn response_fixture(name: &str) -> ResponseFixture {
+    fixtures()
+        .responses
+        .into_iter()
+        .find(|f| f.name == name)
+        .unwrap_or_else(|| panic!("the snapshot records no {name} fixture"))
+}
+
+#[tokio::test]
+async fn reads_the_ai_agent_fixture() {
+    let fixture = response_fixture("ai_agent");
+    let server = serving(&fixture).await;
+    let event = client(&server).events().get("req_1").await.unwrap();
+
+    assert_eq!(event.visitor_kind, Some(VisitorKind::AiBot));
+    let ai = event.ai.expect("an ai_bot event names its agent");
+    assert_eq!(ai.name, "ChatGPT-User");
+    assert_eq!(ai.provider, "OpenAI");
+    assert_eq!(ai.purpose, AiPurpose::UserFetch);
+    assert_eq!(ai.runtime, AiRuntime::ProviderCloud);
+    assert!(ai.declared);
+    assert_eq!(ai.verification.method, AiVerificationMethod::None);
+    assert_eq!(ai.verification.result, AiVerificationResult::NotAttempted);
+}
+
+#[tokio::test]
+async fn reads_the_agent_sightings_fixture() {
+    let fixture = response_fixture("agent_sightings");
+    assert_eq!(fixture.schema, "AgentSightingsOut");
+    let server = serving(&fixture).await;
+    let items: Vec<AgentSighting> = (0..5)
+        .map(|i| AgentSighting::new(format!("agent {i}"), "198.51.100.1"))
+        .collect();
+    let answers = client(&server).agents().sightings(&items).await.unwrap();
+
+    assert_eq!(answers.rules_version, "0123456789abcdef");
+    assert_eq!(answers.items.len(), 5);
+    let [human, gptbot, user, agent, googlebot] = &answers.items[..] else {
+        panic!("five answers");
+    };
+    assert_eq!(human.ttl, 3600);
+    assert_eq!(human.visitor_kind, VisitorKind::Human);
+    assert!(human.agent.is_none() && human.ai.is_none());
+
+    assert_eq!(gptbot.visitor_kind, VisitorKind::AiBot);
+    assert_eq!(gptbot.agent.as_deref(), Some("GPTBot"));
+    let ai = gptbot.ai.as_ref().unwrap();
+    assert_eq!(ai.purpose, AiPurpose::Training);
+    assert_eq!(ai.verification.method, AiVerificationMethod::IpList);
+    assert_eq!(ai.verification.result, AiVerificationResult::Pass);
+
+    let ai = user.ai.as_ref().unwrap();
+    assert_eq!(ai.purpose, AiPurpose::UserFetch);
+    assert_eq!(ai.verification.result, AiVerificationResult::Fail);
+
+    assert_eq!(agent.ttl, 0);
+    let ai = agent.ai.as_ref().unwrap();
+    assert_eq!(ai.purpose, AiPurpose::Agent);
+    assert_eq!(ai.verification.method, AiVerificationMethod::Signature);
+
+    assert_eq!(googlebot.visitor_kind, VisitorKind::SearchCrawler);
+    assert_eq!(googlebot.agent.as_deref(), Some("Googlebot"));
+    assert!(googlebot.ai.is_none());
+}
+
+#[tokio::test]
+async fn an_event_that_is_not_an_ai_agent_has_no_ai() {
+    let fixture = response_fixture("event");
+    let server = serving(&fixture).await;
+    let event = client(&server).events().get("req_1").await.unwrap();
+
+    assert_ne!(event.visitor_kind, Some(VisitorKind::AiBot));
+    assert!(event.ai.is_none());
+}
+
+/// Values a newer server adds decode as `Other` rather than failing the read.
+#[tokio::test]
+async fn ai_agent_values_a_newer_server_adds_still_decode() {
+    let mut fixture = response_fixture("ai_agent");
+    fixture.body["visitor_kind"] = "kind_from_the_future".into();
+    fixture.body["ai"]["purpose"] = "purpose_from_the_future".into();
+    fixture.body["ai"]["runtime"] = "runtime_from_the_future".into();
+    fixture.body["ai"]["verification"]["method"] = "method_from_the_future".into();
+    fixture.body["ai"]["verification"]["result"] = "result_from_the_future".into();
+    let server = serving(&fixture).await;
+    let event = client(&server).events().get("req_1").await.unwrap();
+
+    assert_eq!(
+        event.visitor_kind,
+        Some(VisitorKind::Other("kind_from_the_future".into()))
+    );
+    let ai = event.ai.expect("ai decodes");
+    assert_eq!(
+        ai.purpose,
+        AiPurpose::Other("purpose_from_the_future".into())
+    );
+    assert_eq!(ai.runtime, "runtime_from_the_future");
+    assert!(!ai.verification.method.is_known());
+    assert_eq!(ai.verification.result, "result_from_the_future");
 }
 
 #[tokio::test]

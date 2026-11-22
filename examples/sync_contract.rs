@@ -19,6 +19,10 @@ use sha2::{Digest, Sha256};
 
 const FILES: [&str; 2] = ["openapi.json", "fixtures.json"];
 
+/// Hand-written contract files the manifest records no hash for, copied as
+/// they are: the agent sightings cache key vectors.
+const UNHASHED: [&str; 1] = ["agent-sightings-vectors.json"];
+
 #[derive(Deserialize)]
 struct Manifest {
     files: BTreeMap<String, String>,
@@ -53,6 +57,9 @@ fn run() -> Result<(), String> {
             Some(expected) if *expected == actual => staged.push((name, content)),
             _ => return Err(format!("invalid contract hash for {name}: {actual}")),
         }
+    }
+    for name in UNHASHED {
+        staged.push((name, read(&source.join(name))?));
     }
 
     std::fs::create_dir_all(&target).map_err(|error| format!("create contract dir: {error}"))?;

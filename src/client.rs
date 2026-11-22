@@ -3,6 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::agents::AgentsClient;
 use crate::device_check::DeviceCheckClient;
 use crate::errors::Result;
 use crate::events::EventsClient;
@@ -30,6 +31,7 @@ use crate::transport::Transport;
 pub struct Fingerly {
     events: EventsClient,
     device_check: DeviceCheckClient,
+    agents: AgentsClient,
 }
 
 impl Fingerly {
@@ -64,6 +66,13 @@ impl Fingerly {
     /// client's secret key.
     pub fn device_check(&self) -> &DeviceCheckClient {
         &self.device_check
+    }
+
+    /// Reports of the requests your server served, under this client's
+    /// secret key. See [`AgentSightings`](crate::AgentSightings) for the
+    /// component that batches them in the background.
+    pub fn agents(&self) -> &AgentsClient {
+        &self.agents
     }
 }
 
@@ -152,7 +161,8 @@ impl FingerlyBuilder {
         let transport = Arc::new(transport);
         Ok(Fingerly {
             events: EventsClient::new(transport.clone()),
-            device_check: DeviceCheckClient::new(transport),
+            device_check: DeviceCheckClient::new(transport.clone()),
+            agents: AgentsClient::new(transport),
         })
     }
 }

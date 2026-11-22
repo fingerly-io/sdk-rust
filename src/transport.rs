@@ -120,6 +120,25 @@ impl Transport {
         }
     }
 
+    /// Performs one POST with a JSON body and parses its JSON answer. Never
+    /// retries. `timeout` replaces the client's deadline when given.
+    pub(crate) async fn post_json_body(
+        &self,
+        path: &str,
+        body: Vec<u8>,
+        timeout: Option<Duration>,
+    ) -> Result<serde_json::Value> {
+        let request = self
+            .http
+            .post(format!("{}{path}", self.base_url))
+            .header("content-type", "application/json")
+            .body(body);
+        match tokio::time::timeout(timeout.unwrap_or(self.timeout), self.send(request)).await {
+            Ok(result) => result,
+            Err(_) => Err(Error::Timeout),
+        }
+    }
+
     /// Spends a held DeviceCheck token: one POST or PUT with an optional JSON
     /// body, each attempt under its own deadline.
     ///
@@ -178,6 +197,7 @@ impl Transport {
         let request_id = header_text(&response, "x-request-id");
         let retry_after = header_text(&response, "retry-after")
             .and_then(|value| parse_retry_after(&value, std::time::SystemTime::now()));
+        let rate_limit_scope = header_text(&response, "fingerly-ratelimit-scope");
         let body = self.read_capped(response).await;
 
         if !status.is_success() {
@@ -187,6 +207,9 @@ impl Transport {
             let mut error = self.api_error(status.as_u16(), body.as_deref().unwrap_or_default());
             error.request_id = error.request_id.or(request_id.map(|id| self.redact(&id)));
             error.retry_after = retry_after;
+            if let Some(scope) = rate_limit_scope {
+                error.extras_mut().rate_limit_scope = Some(self.redact(&scope));
+            }
             return Err(Error::Api(error));
         }
         serde_json::from_slice(&body?)
@@ -228,7 +251,7 @@ impl Transport {
             details: None,
             request_id: None,
             retry_after: None,
-            consumed_at: None,
+            extras: None,
         };
 
         let envelope: serde_json::Value =
@@ -256,7 +279,9 @@ impl Transport {
             error.request_id = Some(self.redact(request_id));
         }
         if error.is_already_consumed() {
-            error.consumed_at = consumed_at(&envelope).map(|at| self.redact(at).into());
+            if let Some(at) = consumed_at(&envelope) {
+                error.extras_mut().consumed_at = Some(self.redact(at));
+            }
         }
         error
     }
@@ -293,10 +318,52 @@ fn failure_kind(error: &reqwest::Error) -> &'static str {
     } else if error.is_connect() {
         "could not connect to the API"
     } else if error.is_body() || error.is_decode() {
-        "the answer broke off"
+        ANSWER_BROKE_OFF
+    } else if hung_up_after_sending(error) {
+        HUNG_UP_AFTER_SENDING
     } else {
         "the request failed"
     }
+}
+
+/// The connection failure that happens only once an answer has started, so
+/// the API has seen the request.
+pub(crate) const ANSWER_BROKE_OFF: &str = "the answer broke off";
+
+/// The connection failure that happens only once the whole request was
+/// written, so the API may have seen it.
+pub(crate) const HUNG_UP_AFTER_SENDING: &str = "the connection closed before the answer";
+
+/// Whether the connection was closed or reset while the answer was awaited.
+///
+/// The HTTP/1 stack buffers the whole request before it writes any of it, and
+/// tells the two sides apart only by wording: a failed write is "error writing
+/// a body to connection", a failed read "connection closed before message
+/// completed" or "connection error" over a reset. Only the read side counts.
+/// Any other failure, HTTP/2's included, leaves no telling whether the request
+/// was written, and counts as before sending.
+fn hung_up_after_sending(error: &reqwest::Error) -> bool {
+    let mut source = std::error::Error::source(error);
+    while let Some(cause) = source {
+        match cause.to_string().as_str() {
+            "connection closed before message completed" => return true,
+            "connection error" => {
+                return cause
+                    .source()
+                    .and_then(|io| io.downcast_ref::<std::io::Error>())
+                    .is_some_and(|io| {
+                        matches!(
+                            io.kind(),
+                            std::io::ErrorKind::ConnectionReset
+                                | std::io::ErrorKind::ConnectionAborted
+                                | std::io::ErrorKind::UnexpectedEof
+                        )
+                    });
+            }
+            _ => source = cause.source(),
+        }
+    }
+    false
 }
 
 /// A header as text, when it is present and printable.

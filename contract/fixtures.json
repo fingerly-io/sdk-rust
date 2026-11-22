@@ -74,6 +74,108 @@
     },
     {
       "body": {
+        "request_id": "0199a963-e400-7000-8000-000000000001",
+        "project_id": "0199a963-e400-7000-8000-0000000000a1",
+        "visitor_id": "visitor-test",
+        "occurred_at": "2026-09-17T12:00:00Z",
+        "state": "enriched",
+        "environment": "development",
+        "platform": "web",
+        "sdk_platform": "web",
+        "sdk_version": "0.1.0",
+        "ip_network": "203.0.113.0/24",
+        "agent": "ChatGPT-User",
+        "device_kind": "server",
+        "visitor_kind": "ai_bot",
+        "ai": {
+          "name": "ChatGPT-User",
+          "provider": "OpenAI",
+          "purpose": "user_fetch",
+          "runtime": "provider_cloud",
+          "declared": true,
+          "verification": {
+            "method": "none",
+            "result": "not_attempted"
+          }
+        },
+        "suspect_score": 0,
+        "suspect_level": "low",
+        "triggers": [],
+        "has_document": false
+      },
+      "name": "ai_agent",
+      "schema": "SDKEventOut",
+      "status": 200
+    },
+    {
+      "body": {
+        "rules_version": "0123456789abcdef",
+        "items": [
+          {
+            "ttl": 3600,
+            "visitor_kind": "human"
+          },
+          {
+            "ttl": 900,
+            "visitor_kind": "ai_bot",
+            "agent": "GPTBot",
+            "ai": {
+              "name": "GPTBot",
+              "provider": "OpenAI",
+              "purpose": "training",
+              "runtime": "provider_cloud",
+              "declared": true,
+              "verification": {
+                "method": "ip_list",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "ttl": 300,
+            "visitor_kind": "ai_bot",
+            "agent": "ChatGPT-User",
+            "ai": {
+              "name": "ChatGPT-User",
+              "provider": "OpenAI",
+              "purpose": "user_fetch",
+              "runtime": "provider_cloud",
+              "declared": true,
+              "verification": {
+                "method": "ip_list",
+                "result": "fail"
+              }
+            }
+          },
+          {
+            "ttl": 0,
+            "visitor_kind": "ai_bot",
+            "agent": "ChatGPT agent",
+            "ai": {
+              "name": "ChatGPT agent",
+              "provider": "OpenAI",
+              "purpose": "agent",
+              "runtime": "provider_cloud",
+              "declared": true,
+              "verification": {
+                "method": "signature",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "ttl": 3600,
+            "visitor_kind": "search_crawler",
+            "agent": "Googlebot"
+          }
+        ]
+      },
+      "name": "agent_sightings",
+      "schema": "AgentSightingsOut",
+      "status": 200
+    },
+    {
+      "body": {
         "rows": [
           {
             "request_id": "0199a963-e400-7000-8000-000000000001",

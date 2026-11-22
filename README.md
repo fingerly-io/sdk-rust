@@ -74,8 +74,9 @@ Full guide: [docs.fingerly.io/docs/sdks/rust](https://docs.fingerly.io/docs/sdks
 | Check a webhook delivery is genuine | `verify_webhook` and `WebhookVerifier` | [Verify webhooks](#verify-webhooks) |
 | Read or set an iOS device's two DeviceCheck bits | `device_check().query` / `write` | [DeviceCheck bits on iOS](#devicecheck-bits-on-ios) |
 | Keep the browser SDK first-party, away from content blockers | `FingerlyProxy`, a `tower::Service` | [First-party proxy](#first-party-proxy-same-origin) |
+| See AI crawlers that never run the page's JavaScript | `AgentSightings`, a `tower::Layer` | [AI crawlers on your server](#ai-crawlers-on-your-server) |
 
-On this page: [Read events](#read-events) · [DeviceCheck bits on iOS](#devicecheck-bits-on-ios) · [Verify webhooks](#verify-webhooks) · [First-party proxy](#first-party-proxy-same-origin) · [Features](#features) · [Requirements](#requirements) · [Development](#development-and-release-preparation) · [Documentation](#documentation) · [Help](#help) · [Licence](#licence)
+On this page: [Read events](#read-events) · [DeviceCheck bits on iOS](#devicecheck-bits-on-ios) · [Verify webhooks](#verify-webhooks) · [First-party proxy](#first-party-proxy-same-origin) · [AI crawlers on your server](#ai-crawlers-on-your-server) · [Features](#features) · [Requirements](#requirements) · [Development](#development-and-release-preparation) · [Documentation](#documentation) · [Help](#help) · [Licence](#licence)
 
 ## Read events
 
@@ -213,6 +214,11 @@ and every enum is `#[non_exhaustive]`:
 | `AttestSkippedReason` | `Attestation::attest_skipped` | `NotOffered`, `Unsupported`, `ChallengeUnavailable`, `KeyError`, `Timeout`, `Backoff`, `InstallUnavailable` |
 | `EventState` | `Event::state` | `Pending`, `Enriched`, `Unavailable` |
 | `AnonymityNetwork` | `Event::anonymity_network` | `Tor`, `Relay`, `Vpn`, `Proxy`, `Hosting` |
+| `VisitorKind` | `Event::visitor_kind`, `EventListParams::kind`, `AgentAnswer::visitor_kind` | `Human`, `AiBot`, `Automation`, `SearchCrawler`, and `Unknown` (only in an agent sightings answer: a request the server could not use) |
+| `AiPurpose` | `AiAgent::purpose`, `EventListParams::ai_purpose` | `Training`, `Search`, `UserFetch`, `Agent` |
+| `AiRuntime` | `AiAgent::runtime` | `ProviderCloud`, `HostedBrowser`, `UserDevice` |
+| `AiVerificationMethod` | `AiVerification::method` | `Signature`, `IpList`, `ReverseDns`, `None` |
+| `AiVerificationResult` | `AiVerification::result` | `Pass`, `Fail`, `NotAttempted` |
 | `Environment` | `Event::environment` | `Production`, `Staging`, `Development` |
 | `RiskPlatform` | `Event::platform`, `EventRiskReport::platform` | `Web`, `Ios`, `Android` |
 | `RiskSource` | `EventRiskReport::source` | `Key`, `Organization`, `Default` |
@@ -226,6 +232,42 @@ device owns).
 
 `Event::project_id` names the Fingerly project the event belongs to, as a UUID
 string. It is `None` when the server is older than projects.
+
+`Event::visitor_kind` says what sort of client made the request. When it is
+`VisitorKind::AiBot`, `Event::ai` is an `AiAgent` naming the agent: `name` and
+`provider` (open strings, such as `ChatGPT-User` and `OpenAI`), `purpose`,
+`runtime`, `declared`, and `verification` with its `method` and `result`. On
+every other event `ai` is `None`. The agent is named by a Web Bot Auth
+signature when the request carried one, otherwise by its user agent.
+`verification` says how far that was checked:
+`AiVerificationMethod::Signature` (the operator's published key signed the
+request) or `AiVerificationMethod::IpList` (the address is inside the
+operator's published ranges), with result `AiVerificationResult::Pass`,
+`AiVerificationResult::Fail` (the name was borrowed), or
+`AiVerificationResult::NotAttempted` with method `AiVerificationMethod::None`
+(the operator publishes nothing to check against, or it could not be checked;
+the name is then only the client's claim). Only clients that run the browser
+SDK produce events, so a crawler that does not run JavaScript never appears. `EventListParams` narrows a listing by `kind`,
+`ai_provider` (exact and case sensitive, as events name it) and `ai_purpose`,
+next to `visitor` and `level`:
+
+```rust
+use fingerly::{AiPurpose, EventListParams, VisitorKind};
+
+let page = fingerly
+    .events()
+    .list(
+        EventListParams::new()
+            .kind(VisitorKind::AiBot)
+            .ai_purpose(AiPurpose::UserFetch),
+    )
+    .await?;
+for event in &page.rows {
+    if let Some(ai) = &event.ai {
+        println!("{} {}", ai.provider, ai.name);
+    }
+}
+```
 
 ### Verify a backend action
 
@@ -311,21 +353,22 @@ when the first call landed. Like a read, it is never retried.
 
 ## DeviceCheck bits on iOS
 
-When DeviceCheck is turned on for your project's Apple key, Fingerly holds the
-DeviceCheck token of an iOS identification for one hour. Your backend spends
-it once, with this client, to read or to set the device's two bits. Apple
-keeps the bits per device for your developer team, and they survive a
-reinstall. They mean what you decide; Fingerly never reads or keeps them.
+When DeviceCheck is turned on for your project's Apple key, Fingerly holds two
+DeviceCheck tokens of an iOS identification for one hour, a read token and a
+write token. Your backend spends each once, with this client: the read token
+to read the device's two bits, the write token to set them. Apple keeps the
+bits per device for your developer team, and they survive a reinstall. They
+mean what you decide; Fingerly never reads or keeps them.
 
 Apple treats a DeviceCheck token as single-use, so each held token pays for
-one call: a read or a write, never both. To check a device and then mark it,
-such as for a once-per-device free trial, use two identifications:
+one call, and one identification supports one read and one write. To check a
+device and then mark it, such as for a once-per-device free trial, do both on
+the identification that asks for the trial:
 
-1. Query on the identification that asks for the trial. If the bit says the
-   device already had one, refuse it.
-2. Otherwise record the grant in your own data, have the app identify again,
-   and write the bit with that second request ID. Until the write lands, your
-   own record of the grant is what stops a second trial.
+1. Query the bits. If the bit says the device already had one, refuse it.
+2. Otherwise record the grant in your own data, then write the bit with the
+   same request ID. Until the write lands, your own record of the grant is
+   what stops a second trial.
 
 ```rust
 use fingerly::{DeviceCheckWrite, Error, Fingerly};
@@ -340,7 +383,7 @@ async fn trial_used_on_device(fingerly: &Fingerly, request_id: &str) -> Result<b
     }
 }
 
-/// Called with the request ID of the identification after the grant.
+/// Called with the same request ID, once the grant is in your own data.
 async fn mark_trial_used(fingerly: &Fingerly, request_id: &str) -> Result<bool, Error> {
     match fingerly
         .device_check()
@@ -348,7 +391,7 @@ async fn mark_trial_used(fingerly: &Fingerly, request_id: &str) -> Result<bool, 
         .await
     {
         Ok(_) => Ok(true),
-        // Keep your record unmarked and write at the next identification.
+        // Keep your record unmarked and write at a later identification.
         Err(error) if error.is_device_check_not_held() || error.is_device_check_spent() => Ok(false),
         Err(error) => Err(error),
     }
@@ -364,9 +407,10 @@ keeps its value, and a write that names neither bit is refused with
 A `503 device_check_unavailable`, a timeout or a connection failure leaves the
 token held. The client retries those twice, with the identical request,
 because the API accepts a retry of a held token only when it repeats the first
-request: another operation or other bits answer `409 device_check_spent`. If
-it still fails, retry the same call yourself within the hour. Nothing else is
-retried. Each answer has a predicate on `Error`:
+request: a second read, or a write with other bits, answers
+`409 device_check_spent`. If it still fails, retry the same call yourself
+within the hour. Nothing else is retried. Each answer has a predicate on
+`Error`:
 
 | Status | Code | Predicate |
 | --- | --- | --- |
@@ -405,7 +449,7 @@ Webhook verification needs neither an HTTP stack nor an async runtime, so
 `default-features = false` leaves a build that pulls in neither:
 
 ```toml
-fingerly = { version = "0.3", default-features = false }
+fingerly = { version = "0.5", default-features = false }
 ```
 
 ## First-party proxy (same-origin)
@@ -423,7 +467,7 @@ serves through `hyper_util`:
 
 ```toml
 [dependencies]
-fingerly = "0.3"
+fingerly = "0.5"
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 ```
@@ -508,8 +552,8 @@ its body read yourself, because `timeout` only starts once `handle` is called.
 | One channel | When `Origin` is present it is sent as `x-fingerly-origin` and the platform header is not sent, as on a direct call to the API. |
 | No origin and no platform | `400` (`missing_origin`), rejected locally. `x-fingerly-origin` is never synthesized from `Host`, `Referer` or the request URL. |
 | Body size | Bodies over 1 MiB get `413`. |
-| Forwarded upstream | Alongside verified proxy metadata (`x-fingerly-host` included), only `content-type`, `x-api-key`, `user-agent`, `idempotency-key`, `sec-fetch-*` and `sec-ch-ua-*`. Customer cookies and authorization headers never are. |
-| Proxy identity | The proxy reports itself upstream as `rust/0.4.1`, which the dashboard shows per proxy. |
+| Forwarded upstream | Alongside verified proxy metadata (`x-fingerly-host` included), only `content-type`, `x-api-key`, `user-agent`, `idempotency-key`, `sec-fetch-*`, `sec-ch-ua-*` and the Web Bot Auth `signature`, `signature-input` and `signature-agent` (each dropped when over 4096 bytes). Customer cookies and authorization headers never are. |
+| Proxy identity | The proxy reports itself upstream as `rust/0.5.0`, which the dashboard shows per proxy. |
 | Relayed back | Only `Content-Type`, `X-Request-Id`, `RateLimit-Limit`, `RateLimit-Remaining` and `Retry-After`, plus `Cache-Control: no-store`, so nothing on the response names Fingerly. |
 | Deadline | One deadline, `timeout` (5 seconds by default), covers reading the browser's body and the whole upstream exchange, so a trickling answer cannot stretch it. |
 | Deadline passes during the upstream call | `504` |
@@ -558,12 +602,174 @@ let proxy = FingerlyProxy::builder()
     .build()?;
 ```
 
+## AI crawlers on your server
+
+Most AI crawler and fetcher requests (GPTBot, ClaudeBot and the like) load a
+page without running its JavaScript, so they never reach the browser SDK and
+leave no event. `AgentSightings` reports the pages your server served to
+Fingerly, in the background, and remembers what Fingerly answered about each
+one. The console's AI traffic view then counts them, and your handlers can ask
+what sent a request.
+
+It runs under your secret key, on the `Fingerly` client's connection pool, and
+mounts as a `tower::Layer`, which axum takes directly:
+
+```rust
+use std::net::SocketAddr;
+
+use axum::extract::{ConnectInfo, Extension};
+use axum::response::Html;
+use axum::routing::get;
+use fingerly::{AgentLookup, AgentSightings, AiVerificationResult, Fingerly, VisitorKind};
+use tokio::signal::unix::{signal, SignalKind};
+
+async fn home(Extension(lookup): Extension<AgentLookup>) -> Html<&'static str> {
+    if let Some(ai) = lookup.ai() {
+        if ai.verification.result == AiVerificationResult::Fail {
+            // An AI agent's name, sent from an address its operator does not
+            // publish. Decide what that means for your site.
+        }
+    }
+    if lookup.visitor_kind() == Some(&VisitorKind::SearchCrawler) {
+        // A search engine's crawler, as the server classified it.
+    }
+    // AgentLookup::Unknown: serve as usual.
+    Html("<h1>Welcome</h1>")
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let fingerly = Fingerly::new(std::env::var("FINGERLY_SECRET_KEY")?)?;
+    let sightings = AgentSightings::builder(&fingerly)
+        .client_ip(|parts| {
+            // The header your load balancer or CDN sets, else the TCP peer.
+            if let Some(address) = parts.headers.get("x-real-ip").and_then(|v| v.to_str().ok()) {
+                return address.to_owned();
+            }
+            parts
+                .extensions
+                .get::<ConnectInfo<SocketAddr>>()
+                .map(|ConnectInfo(peer)| peer.ip().to_string())
+                .unwrap_or_default()
+        })
+        .build()?;
+
+    let app = axum::Router::new()
+        .route("/", get(home))
+        .layer(sightings.layer());
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
+    // Docker, Kubernetes and systemd stop a service with SIGTERM; Ctrl-C sends
+    // SIGINT. Without graceful shutdown `serve` never returns and the
+    // sightings still buffered are lost.
+    let mut terminate = signal(SignalKind::terminate())?;
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
+        .with_graceful_shutdown(async move {
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {}
+                _ = terminate.recv() => {}
+            }
+        })
+        .await?;
+
+    // Send what is still buffered before the process exits.
+    sightings.close().await;
+    Ok(())
+}
+```
+
+`client_ip` is the same callback, with the same rules, as the proxy's: one
+IPv4 or IPv6 address from a header your own infrastructure sets, else the TCP
+peer, and never the left-most `X-Forwarded-For` value. A request it returns no
+address for is not reported, and that is reported once a minute.
+
+### Asking what sent a request
+
+The layer puts an `AgentLookup` in every request's extensions. Elsewhere,
+`sightings.lookup(&request)` or `sightings.lookup_parts(&parts)` answers the
+same. A lookup reads memory only: it never waits on the network and never
+fails. It returns `AgentLookup::Known` with the server's answer
+(`visitor_kind`, `agent`, and for an AI agent the `ai` object with how its
+claim was checked) when the server has answered for this exact user agent,
+address and `Signature-Agent` and the answer has not expired, and
+`AgentLookup::Unknown` otherwise. Treat `Unknown` as "serve as usual".
+
+The first request from a client is always `Unknown`: it is reported after its
+response, and the answer arrives with the next flush. A request signed with
+Web Bot Auth is checked every time, so it is never remembered and its lookup
+is always `Unknown`; its answer still reaches the console. A request the
+server could not use is answered `VisitorKind::Unknown` with a `ttl` of 0, so
+it is never remembered either and its lookup stays `Unknown`; the rest of its
+batch is answered as usual.
+
+### Which responses are reported
+
+| Rule | Behaviour |
+| --- | --- |
+| By default | Responses with a `Content-Type` of `text/html` or `application/xhtml+xml`, and every request for `/robots.txt`, `/llms.txt` and `/llms-full.txt`, whatever the status. |
+| `content_types([...])` | Replaces the default content types. Compared with the media type, without parameters and ignoring case. |
+| `include_paths([...])` | Path prefixes reported whatever their content type. |
+| `exclude_paths([...])` | Path prefixes never reported. They win over everything else. |
+| Never | Static assets, API routes and health checks unless you include them. Nothing is ever chosen by user agent, address or any request header. |
+
+The report is made once your service has produced the response, and never
+delays it.
+
+### What is sent
+
+| Sent | Never sent |
+| --- | --- |
+| The `User-Agent` and the method as received (a request with either over 4096 bytes is not reported), the client address from `client_ip`, the `Host`, the Web Bot Auth `Signature`, `Signature-Input` and `Signature-Agent` headers (each left out over 4096 bytes), and how many times the same request was served since the last report. | The path, the query string, cookies, `Authorization`, any other header, the request body and the response. None of the reported fields is logged. |
+
+### Memory, batching and failures
+
+- Answers are kept in a least-recently-used cache, per process: 4096 entries by
+  default (about 1.5 MB), up to 65536 with `cache_capacity` (about 25 MB). Each
+  answer is kept for the `ttl` the server gave it, and all of them are dropped
+  when the server's `rules_version` changes.
+- Repeats of the same request are folded into one pending report with a count,
+  so a crawler fetching a thousand pages is a handful of items. At most 1000
+  requests are pending; past that a new request is not buffered (it stays
+  `Unknown`) and `sightings.dropped()` counts it.
+- A Tokio task sends up to 200 requests at a time, two seconds after the oldest
+  pending one or as soon as 200 requests or 64 KiB are pending, one call at a
+  time, each under a 5 second deadline. It never runs on a request you are
+  serving.
+- It fails open. A rate-limited call (`429`) keeps the batch and waits for
+  `Retry-After`, at least a second and at most a day; an unavailable API (`503`) or a failed connection keeps it and
+  retries after 1 second, doubling up to a minute; a refused key (`401`/`403`)
+  drops it and pauses for a minute; an invalid batch (`422`, no item in the
+  batch was usable) or a deadline
+  passed after the request went out drops it. Requests keep being served
+  throughout, and lookups keep answering from the cache or `Unknown`.
+- Failures the component handled go to `on_error` if you set one, otherwise
+  to one `tracing` warning under the `fingerly::agents` target, each kind at
+  most once a minute.
+
+On a serverless or edge runtime, where nothing runs between invocations, call
+`sightings.flush().await` before the invocation ends. On shutdown,
+`sightings.close().await` sends what is left and stops the task, as in the
+example above (on Windows, wait for `ctrl_c` alone). Neither ever returns an
+error. Each waits at most 6 seconds for a flush in flight, then sends the
+remaining batches one at a time, each under the 5 second deadline, and stops
+at the first that fails, so a hung API holds `close()` for 11 seconds at
+most. A `flush()` or `close()` you cancel, for example under a
+`tokio::time::timeout` of your own, drops the batch it was sending, as a
+passed deadline does. Build the Tokio runtime with timers (`#[tokio::main]`
+or `enable_all()`): on a runtime without them the background task cannot run,
+which is reported once a minute.
+
+For a framework that does not speak `tower`, call
+`sightings.report(&parts, response.headers())` once the response is produced;
+it applies the same rules and never waits on the network. The single call
+underneath is `fingerly.agents().sightings(&items)`, for a server that batches
+on its own.
+
 ## Features
 
 | Feature | Default | What it adds |
 | --- | --- | --- |
 | `client` | yes | `Fingerly`, event reads and DeviceCheck bits, over reqwest and Tokio. |
-| `proxy` | yes | `FingerlyProxy`, a `tower::Service`. Implies `client`. |
+| `proxy` | yes | `FingerlyProxy`, a `tower::Service`, and `AgentSightings`, a `tower::Layer`. Implies `client`. |
 | `rustls` | yes | TLS through rustls. |
 | `native-tls` | no | TLS through the platform's own stack instead. |
 | `time` | no | `OffsetDateTime` accessors for event timestamps and list windows. |
@@ -605,7 +811,9 @@ bump from silently raising it.
 authenticated requests and maps failures to `Error::Api`. `events.rs` owns the
 event reads, the list filters, consuming and verifying; `models.rs` owns the types
 they decode into. `webhooks.rs` verifies signatures and needs nothing else in
-the crate. `proxy.rs` is the same-origin service. `config.rs` validates every
+the crate. `proxy.rs` is the same-origin service. `agents.rs` is the agent sightings
+call and `sightings.rs` the component and layer built on it: the cache key,
+the answer cache, the buffer and the background flusher. `config.rs` validates every
 caller-supplied option: keys, origins, API versions, proxy paths and durations,
 all before any network access. `errors.rs` holds the error type.
 

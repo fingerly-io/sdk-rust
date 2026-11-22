@@ -24,9 +24,17 @@ pub struct ApiError {
     /// `Retry-After` header, or `None` when it sent none. The SDK never
     /// retries a read itself.
     pub retry_after: Option<u64>,
-    /// Read through [`consumed_at`](Self::consumed_at). Boxed so the error
-    /// stays small enough to return by value.
-    pub(crate) consumed_at: Option<Box<str>>,
+    /// Read through [`consumed_at`](Self::consumed_at) and
+    /// [`rate_limit_scope`](Self::rate_limit_scope). Boxed so the error stays
+    /// small enough to return by value.
+    pub(crate) extras: Option<Box<ApiErrorExtras>>,
+}
+
+/// The fields only some errors carry.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ApiErrorExtras {
+    pub(crate) consumed_at: Option<String>,
+    pub(crate) rate_limit_scope: Option<String>,
 }
 
 impl fmt::Display for ApiError {
@@ -65,7 +73,19 @@ impl ApiError {
     /// `409 event_already_consumed`. `None` for every other error, or when the
     /// API sent no time.
     pub fn consumed_at(&self) -> Option<&str> {
-        self.consumed_at.as_deref()
+        self.extras.as_ref()?.consumed_at.as_deref()
+    }
+
+    /// Which limit refused a `429`, from its `Fingerly-RateLimit-Scope`
+    /// header, such as `daily` for an organization's daily allowance. `None`
+    /// when the API sent none.
+    pub fn rate_limit_scope(&self) -> Option<&str> {
+        self.extras.as_ref()?.rate_limit_scope.as_deref()
+    }
+
+    #[cfg(feature = "client")]
+    pub(crate) fn extras_mut(&mut self) -> &mut ApiErrorExtras {
+        self.extras.get_or_insert_with(Box::default)
     }
 
     /// Apple's HTTP status for `422 apple_rejected`, from the `apple_status`
@@ -166,6 +186,15 @@ impl Error {
         }
     }
 
+    /// Which limit refused a `429`, from `Fingerly-RateLimit-Scope`, for an
+    /// API error that carried one.
+    pub fn rate_limit_scope(&self) -> Option<&str> {
+        match self {
+            Error::Api(api) => api.rate_limit_scope(),
+            _ => None,
+        }
+    }
+
     /// True when there is no such event (`404 event_not_found`): the request
     /// id was never issued for this key's environment, or the event is past
     /// retention. A pending event is not "not found"; see
@@ -208,13 +237,14 @@ impl Error {
     }
 
     /// True for `404 device_check_not_held`: no DeviceCheck token is held for
-    /// the event. Decide without the bits; it is not a verdict.
+    /// that call. Decide without the bits; it is not a verdict.
     pub fn is_device_check_not_held(&self) -> bool {
         self.is_api(404, "device_check_not_held")
     }
 
-    /// True for `409 device_check_spent`: the token was already used, or this
-    /// call is a retry that does not repeat the first request.
+    /// True for `409 device_check_spent`: the call's token was already used,
+    /// a read's by a read or a write's by a write, or this call is a retry
+    /// that does not repeat the first request.
     pub fn is_device_check_spent(&self) -> bool {
         self.is_api(409, "device_check_spent")
     }
