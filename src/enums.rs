@@ -160,6 +160,9 @@ wire_enum! {
         JailbrokenDevice = "jailbroken_device",
         /// Group: a rooted Android device.
         RootedDevice = "rooted_device",
+        /// Group and detector: an Android device with an unlocked bootloader
+        /// or an operating system its manufacturer did not sign.
+        BootloaderUnlocked = "bootloader_unlocked",
         /// Group: an app running under a cloning framework.
         ClonedApp = "cloned_app",
         /// Group and detector: a mass-provisioned or reset-fresh device.
