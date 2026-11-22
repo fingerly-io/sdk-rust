@@ -556,7 +556,23 @@ pub struct AgentAnswers {
     /// remembered answer is stale.
     #[serde(default)]
     pub rules_version: String,
-    /// One answer per reported request, in the same order.
-    #[serde(default)]
+    /// One answer per reported request, in the same order. An item this
+    /// build cannot read keeps its place as [`AgentAnswer::default`]: a `ttl`
+    /// of 0, so it is never remembered, and no visitor kind, agent or AI
+    /// agent. Its request stays unknown; the others are kept.
+    #[serde(default, deserialize_with = "answer_items")]
     pub items: Vec<AgentAnswer>,
+}
+
+/// Reads each answer on its own, so one malformed item costs only its own
+/// request rather than the whole batch.
+fn answer_items<'de, D>(deserializer: D) -> std::result::Result<Vec<AgentAnswer>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let items = Vec::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(items
+        .into_iter()
+        .map(|item| AgentAnswer::deserialize(item).unwrap_or_default())
+        .collect())
 }

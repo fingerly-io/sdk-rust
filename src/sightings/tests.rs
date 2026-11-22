@@ -727,6 +727,43 @@ async fn a_timeout_after_sending_drops_the_batch() {
 }
 
 #[tokio::test]
+async fn a_malformed_answer_item_leaves_only_its_request_unknown() {
+    let body = serde_json::json!({
+        "rules_version": "r1",
+        "items": [
+            {"ttl": null, "visitor_kind": "ai_bot"},
+            {"ttl": 600, "visitor_kind": "ai_bot", "agent": "GPTBot"},
+            "not an answer",
+            {"ttl": "600", "visitor_kind": "human"},
+        ],
+    });
+    let server = TestServer::always(Canned::json(200, body.to_string())).await;
+    let clock = FakeClock::new();
+    let (sightings, failures) = component(&server.base_url, &clock);
+    for agent in ["zero", "one", "two", "three"] {
+        sightings.report(&parts(agent, "198.51.100.1"), &html());
+    }
+    sightings.flush().await;
+
+    assert!(failures.lock().unwrap().is_empty());
+    assert!(pending_counts(&sightings).is_empty());
+    let known = sightings.lookup_parts(&parts("one", "198.51.100.1"));
+    assert_eq!(
+        known.answer().and_then(|a| a.agent.as_deref()),
+        Some("GPTBot")
+    );
+    for agent in ["zero", "two", "three"] {
+        assert!(sightings
+            .lookup_parts(&parts(agent, "198.51.100.1"))
+            .is_unknown());
+    }
+    assert_eq!(
+        sightings.inner().state().rules_version.as_deref(),
+        Some("r1")
+    );
+}
+
+#[tokio::test]
 async fn any_other_answer_drops_the_batch_and_is_reported() {
     for canned in [
         error(500, "internal"),
