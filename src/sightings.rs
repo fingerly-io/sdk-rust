@@ -579,8 +579,15 @@ impl Inner {
             .map(text)
             .or_else(|| parts.uri.authority().map(|authority| authority.to_string()));
         // A Web Bot Auth header over 4096 bytes is left out, and then counts
-        // as absent for the key too, so the key matches what is sent.
-        let header = |name| signature_header(&parts.headers, name).map(|value| text(&value));
+        // as absent for the key too, so the key matches what is sent. The
+        // limit applies to the text sent, after U+FFFD replaces each byte that
+        // is not UTF-8: up to three times the bytes received, which the API
+        // would refuse with the whole batch.
+        let header = |name| {
+            signature_header(&parts.headers, name)
+                .map(|value| text(&value))
+                .filter(|value| value.len() <= MAX_HEADER_BYTES)
+        };
         let signature = header("signature");
         let signature_input = header("signature-input");
         let signature_agent = header("signature-agent");

@@ -786,6 +786,40 @@ async fn oversized_headers_are_not_reported_or_left_out() {
 }
 
 #[tokio::test]
+async fn a_web_bot_auth_header_over_4096_bytes_as_sent_is_left_out() {
+    let server = TestServer::always(ok("r1", &[600])).await;
+    let clock = FakeClock::new();
+    let (sightings, _) = component(&server.base_url, &clock);
+
+    // 2000 bytes received, but each byte that is not UTF-8 is sent as U+FFFD,
+    // three bytes: 6000 sent, which the API refuses with the whole batch.
+    let mut parts = signed("Mozilla/5.0", "34.31.25.14");
+    parts
+        .headers
+        .insert("signature", HeaderValue::from_bytes(&[0xff; 2000]).unwrap());
+    let observed = sightings.inner().observe(&parts).unwrap();
+    assert!(observed.item.signature.is_none());
+    assert!(!observed.signed);
+    assert_eq!(
+        observed.key,
+        sighting_key(
+            "Mozilla/5.0",
+            "34.31.25.14",
+            r#""https://chatgpt.com""#,
+            false
+        )
+    );
+
+    // Within the limit as sent, it is kept.
+    parts
+        .headers
+        .insert("signature", HeaderValue::from_bytes(&[0xff; 1365]).unwrap());
+    let observed = sightings.inner().observe(&parts).unwrap();
+    assert_eq!(observed.item.signature.as_deref().map(str::len), Some(4095));
+    assert!(observed.signed);
+}
+
+#[tokio::test]
 async fn a_request_without_a_valid_address_is_not_reported() {
     let clock = FakeClock::new();
     let (sightings, failures) = component("http://127.0.0.1:9", &clock);
