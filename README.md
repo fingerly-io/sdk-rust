@@ -214,7 +214,7 @@ and every enum is `#[non_exhaustive]`:
 | `AttestSkippedReason` | `Attestation::attest_skipped` | `NotOffered`, `Unsupported`, `ChallengeUnavailable`, `KeyError`, `Timeout`, `Backoff`, `InstallUnavailable` |
 | `EventState` | `Event::state` | `Pending`, `Enriched`, `Unavailable` |
 | `AnonymityNetwork` | `Event::anonymity_network` | `Tor`, `Relay`, `Vpn`, `Proxy`, `Hosting` |
-| `VisitorKind` | `Event::visitor_kind`, `EventListParams::kind` | `Human`, `AiBot`, `Automation`, `SearchCrawler` |
+| `VisitorKind` | `Event::visitor_kind`, `EventListParams::kind`, `AgentAnswer::visitor_kind` | `Human`, `AiBot`, `Automation`, `SearchCrawler`, and `Unknown` (only in an agent sightings answer: a request the server could not use) |
 | `AiPurpose` | `AiAgent::purpose`, `EventListParams::ai_purpose` | `Training`, `Search`, `UserFetch`, `Agent` |
 | `AiRuntime` | `AiAgent::runtime` | `ProviderCloud`, `HostedBrowser`, `UserDevice` |
 | `AiVerificationMethod` | `AiVerification::method` | `Signature`, `IpList`, `ReverseDns`, `None` |
@@ -696,7 +696,10 @@ address and `Signature-Agent` and the answer has not expired, and
 The first request from a client is always `Unknown`: it is reported after its
 response, and the answer arrives with the next flush. A request signed with
 Web Bot Auth is checked every time, so it is never remembered and its lookup
-is always `Unknown`; its answer still reaches the console.
+is always `Unknown`; its answer still reaches the console. A request the
+server could not use is answered `VisitorKind::Unknown` with a `ttl` of 0, so
+it is never remembered either and its lookup stays `Unknown`; the rest of its
+batch is answered as usual.
 
 ### Which responses are reported
 
@@ -734,7 +737,8 @@ delays it.
 - It fails open. A rate-limited call (`429`) keeps the batch and waits for
   `Retry-After`, at least a second and at most a day; an unavailable API (`503`) or a failed connection keeps it and
   retries after 1 second, doubling up to a minute; a refused key (`401`/`403`)
-  drops it and pauses for a minute; an invalid batch (`422`) or a deadline
+  drops it and pauses for a minute; an invalid batch (`422`, no item in the
+  batch was usable) or a deadline
   passed after the request went out drops it. Requests keep being served
   throughout, and lookups keep answering from the cache or `Unknown`.
 - Failures the component handled go to `on_error` if you set one, otherwise

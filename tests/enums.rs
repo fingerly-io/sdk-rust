@@ -169,7 +169,7 @@ fn other_wire_values() {
     assert_wire(WebhookEnvironment::KNOWN, &["live", "test"]);
     assert_wire(
         VisitorKind::KNOWN,
-        &["human", "ai_bot", "automation", "search_crawler"],
+        &["human", "ai_bot", "automation", "search_crawler", "unknown"],
     );
     assert_wire(
         AiPurpose::KNOWN,

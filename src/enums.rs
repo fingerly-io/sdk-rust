@@ -421,6 +421,9 @@ wire_enum! {
         Automation = "automation",
         /// A search engine crawler.
         SearchCrawler = "search_crawler",
+        /// Only in an agent sightings answer: a request the server could not
+        /// use; ttl 0, never remembered.
+        Unknown = "unknown",
     }
 }
 

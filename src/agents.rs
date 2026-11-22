@@ -35,8 +35,14 @@ impl AgentsClient {
     /// Reports up to 200 served requests, as raw input, and returns what sent
     /// each one, in the same order.
     ///
+    /// An item the server could not use is answered
+    /// [`VisitorKind::Unknown`](crate::VisitorKind::Unknown) with a `ttl` of 0
+    /// in its own position, and is neither classified nor counted; the others
+    /// are answered as usual.
+    ///
     /// Never retried. A refusal is [`Error::Api`]: `422 invalid_request` for
-    /// an empty or oversized batch, `401`/`403` for a key that is wrong or
+    /// an empty or oversized batch, or when no item in the batch was usable,
+    /// `401`/`403` for a key that is wrong or
     /// revoked, and `429 rate_limited` with
     /// [`retry_after`](crate::ApiError::retry_after) and
     /// [`rate_limit_scope`](crate::ApiError::rate_limit_scope) (`daily` for

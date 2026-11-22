@@ -764,6 +764,44 @@ async fn a_malformed_answer_item_leaves_only_its_request_unknown() {
 }
 
 #[tokio::test]
+async fn an_item_the_server_could_not_use_stays_unknown_and_the_rest_are_stored() {
+    let bot = serde_json::json!({"ttl": 60, "visitor_kind": "ai_bot", "agent": "GPTBot"});
+    let body = serde_json::json!({
+        "rules_version": "r1",
+        "items": [bot, {"ttl": 0, "visitor_kind": VisitorKind::Unknown.as_str()}, bot],
+    });
+    let server = TestServer::always(Canned::json(200, body.to_string())).await;
+    let clock = FakeClock::new();
+    let (sightings, failures) = component(&server.base_url, &clock);
+    for agent in ["first", "unusable", "third"] {
+        sightings.report(&parts(agent, "198.51.100.1"), &html());
+    }
+    sightings.flush().await;
+    sightings.flush().await;
+
+    assert_eq!(server.request_count(), 1, "nothing was kept to send again");
+    let sent: Vec<String> = sent_items(&server.requests()[0].body)
+        .iter()
+        .map(|item| item["user_agent"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(sent, ["first", "unusable", "third"]);
+    for agent in ["first", "third"] {
+        assert_eq!(
+            sightings
+                .lookup_parts(&parts(agent, "198.51.100.1"))
+                .visitor_kind(),
+            Some(&VisitorKind::AiBot)
+        );
+    }
+    assert!(sightings
+        .lookup_parts(&parts("unusable", "198.51.100.1"))
+        .is_unknown());
+    assert!(failures.lock().unwrap().is_empty(), "nothing was logged");
+    assert_eq!(sightings.dropped(), 0);
+    assert!(pending_counts(&sightings).is_empty());
+}
+
+#[tokio::test]
 async fn any_other_answer_drops_the_batch_and_is_reported() {
     for canned in [
         error(500, "internal"),

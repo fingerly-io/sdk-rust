@@ -534,6 +534,8 @@ pub struct AgentAnswer {
     #[serde(default)]
     pub ttl: i64,
     /// What sort of client sent the request, such as [`VisitorKind::AiBot`].
+    /// [`VisitorKind::Unknown`], with a `ttl` of 0, marks a request the
+    /// server could not use; it is never remembered.
     #[serde(default)]
     pub visitor_kind: VisitorKind,
     /// The agent's name where the server knows it, such as `GPTBot`. `None`

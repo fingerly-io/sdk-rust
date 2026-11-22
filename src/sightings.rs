@@ -162,7 +162,8 @@ impl AgentLookup {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum AgentSightingsErrorKind {
-    /// The API refused a batch as invalid (`422`). The batch was dropped.
+    /// The API refused a batch as invalid (`422`): no item in the batch was
+    /// usable. The batch was dropped.
     InvalidRequest,
     /// The API refused the secret key (`401` or `403`). The batch was
     /// dropped and flushing paused for 60 seconds.
