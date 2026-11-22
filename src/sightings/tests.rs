@@ -1222,3 +1222,53 @@ async fn a_cancelled_flush_gives_its_batch_place_back() {
     assert_eq!(pending_counts(&sightings), vec![1]);
     assert_eq!(sightings.dropped(), 0);
 }
+
+#[test]
+fn a_flusher_that_panics_is_started_again_at_most_once_a_minute() {
+    // A runtime built without timers: the flusher panics on its first sleep.
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_io()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let clock = FakeClock::new();
+        let failures = Arc::new(Mutex::new(Vec::new()));
+        let seen = failures.clone();
+        let mut builder = builder("http://127.0.0.1:9", &clock)
+            .on_error(move |failure| seen.lock().unwrap().push(failure.kind));
+        builder.background = true;
+        let sightings = builder.build().unwrap();
+        let settle = || async {
+            for _ in 0..10 {
+                tokio::task::yield_now().await;
+            }
+        };
+        for i in 0..50 {
+            sightings.report(&parts(&format!("agent {i}"), "198.51.100.1"), &html());
+            settle().await;
+        }
+        assert_eq!(
+            *failures.lock().unwrap(),
+            vec![AgentSightingsErrorKind::FlusherStopped],
+            "one report, not one panic per request"
+        );
+        let started = |sightings: &AgentSightings| {
+            sightings
+                .inner()
+                .flusher
+                .lock()
+                .unwrap()
+                .task
+                .as_ref()
+                .is_some_and(|task| !task.is_finished())
+        };
+        assert!(!started(&sightings));
+        assert_eq!(pending_counts(&sightings).len(), 50);
+
+        clock.advance(FLUSHER_RESTART);
+        sightings.report(&parts("later", "198.51.100.1"), &html());
+        assert!(started(&sightings), "not started again after a minute");
+        settle().await;
+        assert!(!started(&sightings));
+    });
+}

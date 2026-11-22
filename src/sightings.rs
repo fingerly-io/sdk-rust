@@ -69,6 +69,8 @@ const REPORT_EVERY: Duration = Duration::from_secs(60);
 const IDLE_WAIT: Duration = Duration::from_secs(30);
 /// The shortest the background flusher sleeps, so it can never spin.
 const MIN_WAIT: Duration = Duration::from_millis(100);
+/// How long after a panic the background flusher is started again.
+const FLUSHER_RESTART: Duration = Duration::from_secs(60);
 
 /// The response content types reported by default.
 const DEFAULT_CONTENT_TYPES: [&str; 2] = ["text/html", "application/xhtml+xml"];
@@ -166,6 +168,10 @@ pub enum AgentSightingsErrorKind {
     /// The `client_ip` callback returned something other than one address,
     /// so the request was not reported.
     InvalidClientIp,
+    /// The background flusher stopped on a panic, as it does on a Tokio
+    /// runtime built without timers (use `enable_all()`). It is started again
+    /// 60 seconds later; sightings wait in the buffer meanwhile.
+    FlusherStopped,
 }
 
 /// A failure the component handled on its own. Requests keep being served
@@ -251,13 +257,21 @@ pub(crate) struct Inner {
     flight: tokio::sync::Mutex<()>,
     /// Wakes the background flusher early.
     wake: Arc<tokio::sync::Notify>,
-    flusher: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    flusher: Mutex<Flusher>,
     background: bool,
     closed: AtomicBool,
     dropped: AtomicU64,
     on_error: Option<Arc<AgentSightingsErrorHook>>,
     clock: Clock,
     deadline: Duration,
+}
+
+/// The background flusher's task.
+#[derive(Default)]
+struct Flusher {
+    task: Option<tokio::task::JoinHandle<()>>,
+    /// After the task panicked: when it may be started again.
+    restart_at: Option<Instant>,
 }
 
 impl fmt::Debug for AgentSightings {
@@ -659,20 +673,53 @@ impl Inner {
     /// Starts the background flusher on the current Tokio runtime, or again
     /// when the runtime it ran on has gone. Without a runtime nothing starts,
     /// and [`AgentSightings::flush`] sends what is buffered.
+    ///
+    /// A flusher that panicked, as one does on a runtime built without
+    /// timers, is started again at most once a minute rather than on every
+    /// request, and that is reported.
     fn ensure_flusher(self: &Arc<Self>) {
         if !self.background {
             return;
         }
-        let mut flusher = self.flusher.lock().unwrap_or_else(PoisonError::into_inner);
-        if flusher.as_ref().is_some_and(|task| !task.is_finished()) {
-            return;
+        let now = self.now();
+        let mut panicked = false;
+        {
+            let mut flusher = self.flusher.lock().unwrap_or_else(PoisonError::into_inner);
+            if let Some(task) = flusher.task.as_mut() {
+                if !task.is_finished() {
+                    return;
+                }
+                // A finished task is ready, so this poll never registers the
+                // waker; the handle is dropped right after, never polled again.
+                let mut cx = Context::from_waker(std::task::Waker::noop());
+                panicked = matches!(
+                    Pin::new(task).poll(&mut cx),
+                    Poll::Ready(Err(error)) if error.is_panic()
+                );
+                flusher.task = None;
+                if panicked {
+                    flusher.restart_at = now.checked_add(FLUSHER_RESTART);
+                }
+            }
+            let waiting = flusher.restart_at.is_some_and(|at| now < at);
+            if !waiting {
+                if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+                    let weak = Arc::downgrade(self);
+                    let wake = self.wake.clone();
+                    flusher.task = Some(runtime.spawn(run_flusher(weak, wake)));
+                    flusher.restart_at = None;
+                }
+            }
         }
-        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
-            return;
-        };
-        let weak = Arc::downgrade(self);
-        let wake = self.wake.clone();
-        *flusher = Some(runtime.spawn(run_flusher(weak, wake)));
+        if panicked {
+            self.report_failure(
+                AgentSightingsErrorKind::FlusherStopped,
+                None,
+                "the background flusher stopped on a panic, such as on a Tokio runtime built \
+                 without timers; it is started again in 60 seconds"
+                    .to_owned(),
+            );
+        }
     }
 
     /// Hands a failure to the hook, or logs one line, at most once a minute
@@ -1160,7 +1207,7 @@ impl AgentSightingsBuilder {
                 }),
                 flight: tokio::sync::Mutex::new(()),
                 wake: Arc::new(tokio::sync::Notify::new()),
-                flusher: Mutex::new(None),
+                flusher: Mutex::new(Flusher::default()),
                 background: self.background,
                 closed: AtomicBool::new(false),
                 dropped: AtomicU64::new(0),
