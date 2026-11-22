@@ -619,6 +619,7 @@ use axum::extract::{ConnectInfo, Extension};
 use axum::response::Html;
 use axum::routing::get;
 use fingerly::{AgentLookup, AgentSightings, AiVerificationResult, Fingerly, VisitorKind};
+use tokio::signal::unix::{signal, SignalKind};
 
 async fn home(Extension(lookup): Extension<AgentLookup>) -> Html<&'static str> {
     if let Some(ai) = lookup.ai() {
@@ -655,7 +656,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/", get(home))
         .layer(sightings.layer());
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
-    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await?;
+    // Docker, Kubernetes and systemd stop a service with SIGTERM; Ctrl-C sends
+    // SIGINT. Without graceful shutdown `serve` never returns and the
+    // sightings still buffered are lost.
+    let mut terminate = signal(SignalKind::terminate())?;
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
+        .with_graceful_shutdown(async move {
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {}
+                _ = terminate.recv() => {}
+            }
+        })
+        .await?;
 
     // Send what is still buffered before the process exits.
     sightings.close().await;
@@ -729,7 +741,16 @@ delays it.
 
 On a serverless or edge runtime, where nothing runs between invocations, call
 `sightings.flush().await` before the invocation ends. On shutdown,
-`sightings.close().await` sends what is left and stops the task.
+`sightings.close().await` sends what is left and stops the task, as in the
+example above (on Windows, wait for `ctrl_c` alone). Neither ever returns an
+error. Each waits at most 6 seconds for a flush in flight, then sends the
+remaining batches one at a time, each under the 5 second deadline, and stops
+at the first that fails, so a hung API holds `close()` for 11 seconds at
+most. A `flush()` or `close()` you cancel, for example under a
+`tokio::time::timeout` of your own, drops the batch it was sending, as a
+passed deadline does. Build the Tokio runtime with timers (`#[tokio::main]`
+or `enable_all()`): on a runtime without them the background task cannot run,
+which is reported once a minute.
 
 For a framework that does not speak `tower`, call
 `sightings.report(&parts, response.headers())` once the response is produced;

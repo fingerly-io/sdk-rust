@@ -1223,6 +1223,27 @@ async fn a_cancelled_flush_gives_its_batch_place_back() {
     assert_eq!(sightings.dropped(), 0);
 }
 
+#[tokio::test]
+async fn close_is_harmless_twice_concurrently_and_before_use() {
+    let server = TestServer::always(ok("r1", &[600])).await;
+    let clock = FakeClock::new();
+    let (sightings, failures) = component(&server.base_url, &clock);
+    sightings.report(&parts("one", "198.51.100.1"), &html());
+    let (a, b) = (sightings.clone(), sightings.clone());
+    tokio::join!(a.close(), b.close());
+    sightings.close().await;
+    assert_eq!(server.request_count(), 1);
+    // Use after close: reports are ignored, lookups and flushes still answer.
+    sightings.report(&parts("two", "198.51.100.1"), &html());
+    assert!(pending_counts(&sightings).is_empty());
+    sightings.flush().await;
+    assert!(!sightings
+        .lookup_parts(&parts("one", "198.51.100.1"))
+        .is_unknown());
+    assert_eq!(server.request_count(), 1);
+    assert!(failures.lock().unwrap().is_empty());
+}
+
 #[test]
 fn a_flusher_that_panics_is_started_again_at_most_once_a_minute() {
     // A runtime built without timers: the flusher panics on its first sleep.
