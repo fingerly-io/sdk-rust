@@ -1191,3 +1191,34 @@ async fn flush_waits_at_most_a_second_past_the_deadline_for_a_flush_in_flight() 
     assert_eq!(server.request_count(), 0);
     assert_eq!(pending_counts(&sightings), vec![1]);
 }
+
+#[tokio::test]
+async fn a_cancelled_flush_gives_its_batch_place_back() {
+    // The caller's own deadline cancels each flush while the API stalls.
+    let server = TestServer::always(ok("r1", &[600]).delay(Duration::from_secs(2))).await;
+    let clock = FakeClock::new();
+    let (sightings, _) = component(&server.base_url, &clock);
+    for round in 0..6 {
+        for i in 0..BATCH_ITEMS {
+            sightings.report(
+                &parts(&format!("agent {round} {i}"), "198.51.100.1"),
+                &html(),
+            );
+        }
+        let cancelled = tokio::time::timeout(Duration::from_millis(50), sightings.flush()).await;
+        assert!(
+            cancelled.is_err(),
+            "round {round}: the flush was not cancelled"
+        );
+        let state = sightings.inner().state();
+        assert_eq!(state.in_flight, 0, "round {round}");
+        assert!(
+            state.pending.is_empty(),
+            "round {round}: a cancelled batch was kept"
+        );
+    }
+    // Six cancelled batches of 200 would have filled the 1000-item buffer.
+    sightings.report(&parts("after", "198.51.100.1"), &html());
+    assert_eq!(pending_counts(&sightings), vec![1]);
+    assert_eq!(sightings.dropped(), 0);
+}

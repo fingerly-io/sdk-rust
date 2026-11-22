@@ -747,6 +747,15 @@ impl Inner {
             (taken, items)
         };
 
+        // A caller that drops this future, such as `flush()` under a deadline
+        // of its own or a runtime shutting down, must not leave the batch
+        // counted as in flight forever: that would fill the buffer for good.
+        // The request may have gone out, so the batch is dropped, as when the
+        // deadline passes.
+        let mut flight = InFlight {
+            inner: self,
+            items: taken.len(),
+        };
         let result = self
             .agents
             .sightings_within(&items, Some(self.deadline))
@@ -755,6 +764,7 @@ impl Inner {
         let now = self.now();
         let mut state = self.lock();
         state.in_flight -= taken.len();
+        flight.items = 0;
         let failure = match result {
             Ok(answers) if answers.items.len() == taken.len() => {
                 state.store(&taken, answers, now);
@@ -842,6 +852,20 @@ impl State {
     fn back_off(&mut self, now: Instant) {
         self.paused_until = Some(now + self.backoff);
         self.backoff = (self.backoff * 2).min(BACKOFF_MAX);
+    }
+}
+
+/// Releases a batch's place in the buffer when its send is cancelled.
+struct InFlight<'a> {
+    inner: &'a Inner,
+    items: usize,
+}
+
+impl Drop for InFlight<'_> {
+    fn drop(&mut self) {
+        if self.items > 0 {
+            self.inner.lock().in_flight -= self.items;
+        }
     }
 }
 
@@ -959,12 +983,18 @@ impl AgentSightings {
     /// at most 6 seconds for a flush in flight, and never returns an error.
     /// Serverless and edge handlers call it before the
     /// invocation ends.
+    ///
+    /// Cancelling it, by dropping the future, drops the batch it was
+    /// sending, as a passed deadline does: the API may already have counted
+    /// it.
     pub async fn flush(&self) {
         self.inner.flush_all().await;
     }
 
     /// Stops the background flusher, sends what is buffered, and ignores
-    /// every later report. Call it on shutdown.
+    /// every later report. Call it on shutdown, after your server has
+    /// stopped serving (with axum, behind `with_graceful_shutdown`). Calling
+    /// it again, or from several tasks at once, is harmless.
     pub async fn close(&self) {
         self.inner.closed.store(true, Ordering::Release);
         self.inner.wake.notify_one();
