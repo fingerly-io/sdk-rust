@@ -756,11 +756,15 @@ impl Inner {
     }
 
     /// Flushes while a flush is due, unless one is already in flight.
+    ///
+    /// The flight lock is taken for each batch rather than for them all, so
+    /// a `flush()` or `close()` waiting for it gets it after the batch in
+    /// flight, however many more are due.
     async fn flush_due(&self) {
-        let Ok(_flight) = self.flight.try_lock() else {
-            return;
-        };
         while self.lock().due(self.now()) {
+            let Ok(_flight) = self.flight.try_lock() else {
+                return;
+            };
             if self.send_batch().await != Sent::Yes {
                 break;
             }

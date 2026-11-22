@@ -820,6 +820,37 @@ async fn a_web_bot_auth_header_over_4096_bytes_as_sent_is_left_out() {
 }
 
 #[tokio::test]
+async fn flush_gets_the_flight_lock_after_the_batch_in_flight() {
+    // Each batch is answered after 200 ms: slow, but well within the test's
+    // 300 ms deadline.
+    let size = 16;
+    let answer = ok("r1", &[600; 16]).delay(Duration::from_millis(200));
+    let server = TestServer::always(answer).await;
+    let clock = FakeClock::new();
+    let (sightings, failures) = component(&server.base_url, &clock);
+
+    // 16 user agents of 4000 bytes fill 64 KiB: ten due batches of 16, two
+    // seconds of sending in all, past the 1.3 s `flush()` waits for the
+    // flight lock.
+    for i in 0..10 * size {
+        let user_agent = format!("{i:04}{}", "a".repeat(3996));
+        sightings.report(&parts(&user_agent, "198.51.100.1"), &html());
+    }
+    let inner = sightings.inner().clone();
+    let background = tokio::spawn(async move { inner.flush_due().await });
+    wait_for(|| server.request_count() >= 1, Duration::from_secs(2)).await;
+
+    sightings.flush().await;
+    assert!(
+        pending_counts(&sightings).is_empty(),
+        "flush() waited out the background flush instead of sending"
+    );
+    background.await.unwrap();
+    assert_eq!(server.request_count(), 10);
+    assert!(failures.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn a_request_without_a_valid_address_is_not_reported() {
     let clock = FakeClock::new();
     let (sightings, failures) = component("http://127.0.0.1:9", &clock);
