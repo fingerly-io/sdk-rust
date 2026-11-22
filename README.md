@@ -449,7 +449,7 @@ Webhook verification needs neither an HTTP stack nor an async runtime, so
 `default-features = false` leaves a build that pulls in neither:
 
 ```toml
-fingerly = { version = "0.3", default-features = false }
+fingerly = { version = "0.5", default-features = false }
 ```
 
 ## First-party proxy (same-origin)
@@ -467,7 +467,7 @@ serves through `hyper_util`:
 
 ```toml
 [dependencies]
-fingerly = "0.3"
+fingerly = "0.5"
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 ```
@@ -553,7 +553,7 @@ its body read yourself, because `timeout` only starts once `handle` is called.
 | No origin and no platform | `400` (`missing_origin`), rejected locally. `x-fingerly-origin` is never synthesized from `Host`, `Referer` or the request URL. |
 | Body size | Bodies over 1 MiB get `413`. |
 | Forwarded upstream | Alongside verified proxy metadata (`x-fingerly-host` included), only `content-type`, `x-api-key`, `user-agent`, `idempotency-key`, `sec-fetch-*`, `sec-ch-ua-*` and the Web Bot Auth `signature`, `signature-input` and `signature-agent` (each dropped when over 4096 bytes). Customer cookies and authorization headers never are. |
-| Proxy identity | The proxy reports itself upstream as `rust/0.4.1`, which the dashboard shows per proxy. |
+| Proxy identity | The proxy reports itself upstream as `rust/0.5.0`, which the dashboard shows per proxy. |
 | Relayed back | Only `Content-Type`, `X-Request-Id`, `RateLimit-Limit`, `RateLimit-Remaining` and `Retry-After`, plus `Cache-Control: no-store`, so nothing on the response names Fingerly. |
 | Deadline | One deadline, `timeout` (5 seconds by default), covers reading the browser's body and the whole upstream exchange, so a trickling answer cannot stretch it. |
 | Deadline passes during the upstream call | `504` |
