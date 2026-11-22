@@ -1155,6 +1155,28 @@ async fn a_retry_after_of_zero_or_past_pauses_at_least_a_second() {
 }
 
 #[tokio::test]
+async fn a_huge_retry_after_pauses_for_at_most_a_day() {
+    // Seconds far past what an Instant can hold, a thousand years, and the
+    // largest value a u64 parses.
+    for retry_after in ["31536000000", "86401", "18446744073709551615"] {
+        let server =
+            TestServer::always(error(429, "rate_limited").header("retry-after", retry_after)).await;
+        let clock = FakeClock::new();
+        let (sightings, _) = component(&server.base_url, &clock);
+        sightings.report(&parts("one", "198.51.100.1"), &html());
+        let now = (clock.clock())();
+        sightings.flush().await;
+        let paused = sightings.inner().state().paused_until.unwrap() - now;
+        assert_eq!(
+            paused,
+            Duration::from_secs(86_400),
+            "Retry-After {retry_after:?}"
+        );
+        assert_eq!(pending_counts(&sightings), vec![1]);
+    }
+}
+
+#[tokio::test]
 async fn a_ttl_is_kept_for_at_most_a_day() {
     let server = TestServer::always(ok("r1", &[10 * 86_400])).await;
     let clock = FakeClock::new();

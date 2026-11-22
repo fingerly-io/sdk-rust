@@ -59,6 +59,9 @@ const RATE_LIMIT_PAUSE: Duration = Duration::from_secs(60);
 /// The shortest pause a `429` causes, even with a `Retry-After` of `0` or a
 /// date already past.
 const MIN_RATE_LIMIT_PAUSE: Duration = Duration::from_secs(1);
+/// The longest pause a `429` causes, whatever its `Retry-After` asks for: a
+/// day, the longest any allowance takes to reset.
+const MAX_RATE_LIMIT_PAUSE: Duration = Duration::from_secs(86_400);
 /// The first and the longest wait after a `503` or a failed connection.
 const BACKOFF_START: Duration = Duration::from_secs(1);
 const BACKOFF_MAX: Duration = Duration::from_secs(60);
@@ -842,9 +845,8 @@ impl Inner {
                 }
                 429 => {
                     let wait = match (api.retry_after, api.rate_limit_scope()) {
-                        (Some(seconds), _) => {
-                            Duration::from_secs(seconds).max(MIN_RATE_LIMIT_PAUSE)
-                        }
+                        (Some(seconds), _) => Duration::from_secs(seconds)
+                            .clamp(MIN_RATE_LIMIT_PAUSE, MAX_RATE_LIMIT_PAUSE),
                         (None, Some("daily")) => until_next_utc_day(SystemTime::now()),
                         (None, _) => RATE_LIMIT_PAUSE,
                     };

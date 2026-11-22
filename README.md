@@ -730,7 +730,7 @@ delays it.
   time, each under a 5 second deadline. It never runs on a request you are
   serving.
 - It fails open. A rate-limited call (`429`) keeps the batch and waits for
-  `Retry-After`; an unavailable API (`503`) or a failed connection keeps it and
+  `Retry-After`, at least a second and at most a day; an unavailable API (`503`) or a failed connection keeps it and
   retries after 1 second, doubling up to a minute; a refused key (`401`/`403`)
   drops it and pauses for a minute; an invalid batch (`422`) or a deadline
   passed after the request went out drops it. Requests keep being served
