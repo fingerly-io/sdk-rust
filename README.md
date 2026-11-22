@@ -353,21 +353,22 @@ when the first call landed. Like a read, it is never retried.
 
 ## DeviceCheck bits on iOS
 
-When DeviceCheck is turned on for your project's Apple key, Fingerly holds the
-DeviceCheck token of an iOS identification for one hour. Your backend spends
-it once, with this client, to read or to set the device's two bits. Apple
-keeps the bits per device for your developer team, and they survive a
-reinstall. They mean what you decide; Fingerly never reads or keeps them.
+When DeviceCheck is turned on for your project's Apple key, Fingerly holds two
+DeviceCheck tokens of an iOS identification for one hour, a read token and a
+write token. Your backend spends each once, with this client: the read token
+to read the device's two bits, the write token to set them. Apple keeps the
+bits per device for your developer team, and they survive a reinstall. They
+mean what you decide; Fingerly never reads or keeps them.
 
 Apple treats a DeviceCheck token as single-use, so each held token pays for
-one call: a read or a write, never both. To check a device and then mark it,
-such as for a once-per-device free trial, use two identifications:
+one call, and one identification supports one read and one write. To check a
+device and then mark it, such as for a once-per-device free trial, do both on
+the identification that asks for the trial:
 
-1. Query on the identification that asks for the trial. If the bit says the
-   device already had one, refuse it.
-2. Otherwise record the grant in your own data, have the app identify again,
-   and write the bit with that second request ID. Until the write lands, your
-   own record of the grant is what stops a second trial.
+1. Query the bits. If the bit says the device already had one, refuse it.
+2. Otherwise record the grant in your own data, then write the bit with the
+   same request ID. Until the write lands, your own record of the grant is
+   what stops a second trial.
 
 ```rust
 use fingerly::{DeviceCheckWrite, Error, Fingerly};
@@ -382,7 +383,7 @@ async fn trial_used_on_device(fingerly: &Fingerly, request_id: &str) -> Result<b
     }
 }
 
-/// Called with the request ID of the identification after the grant.
+/// Called with the same request ID, once the grant is in your own data.
 async fn mark_trial_used(fingerly: &Fingerly, request_id: &str) -> Result<bool, Error> {
     match fingerly
         .device_check()
@@ -390,7 +391,7 @@ async fn mark_trial_used(fingerly: &Fingerly, request_id: &str) -> Result<bool, 
         .await
     {
         Ok(_) => Ok(true),
-        // Keep your record unmarked and write at the next identification.
+        // Keep your record unmarked and write at a later identification.
         Err(error) if error.is_device_check_not_held() || error.is_device_check_spent() => Ok(false),
         Err(error) => Err(error),
     }
@@ -406,9 +407,10 @@ keeps its value, and a write that names neither bit is refused with
 A `503 device_check_unavailable`, a timeout or a connection failure leaves the
 token held. The client retries those twice, with the identical request,
 because the API accepts a retry of a held token only when it repeats the first
-request: another operation or other bits answer `409 device_check_spent`. If
-it still fails, retry the same call yourself within the hour. Nothing else is
-retried. Each answer has a predicate on `Error`:
+request: a second read, or a write with other bits, answers
+`409 device_check_spent`. If it still fails, retry the same call yourself
+within the hour. Nothing else is retried. Each answer has a predicate on
+`Error`:
 
 | Status | Code | Predicate |
 | --- | --- | --- |

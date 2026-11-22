@@ -237,13 +237,14 @@ impl Error {
     }
 
     /// True for `404 device_check_not_held`: no DeviceCheck token is held for
-    /// the event. Decide without the bits; it is not a verdict.
+    /// that call. Decide without the bits; it is not a verdict.
     pub fn is_device_check_not_held(&self) -> bool {
         self.is_api(404, "device_check_not_held")
     }
 
-    /// True for `409 device_check_spent`: the token was already used, or this
-    /// call is a retry that does not repeat the first request.
+    /// True for `409 device_check_spent`: the call's token was already used,
+    /// a read's by a read or a write's by a write, or this call is a retry
+    /// that does not repeat the first request.
     pub fn is_device_check_spent(&self) -> bool {
         self.is_api(409, "device_check_spent")
     }
