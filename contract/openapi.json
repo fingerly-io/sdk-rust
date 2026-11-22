@@ -89,11 +89,11 @@
             "type": "integer"
           },
           "host": {
-            "description": "The Host the request was sent to, which a signing agent signs",
+            "description": "The Host the request was sent to, which a signing agent signs. At most 4096 bytes",
             "type": "string"
           },
           "method": {
-            "description": "The request method; GET when absent",
+            "description": "The request method; GET when absent. At most 4096 bytes",
             "type": "string"
           },
           "signature": {
@@ -137,17 +137,18 @@
             "description": "Present when visitor_kind is ai_bot: who operates the agent, what its traffic is for, and how far its claim was checked"
           },
           "ttl": {
-            "description": "Seconds this answer may be reused for the exact same user agent, address and Signature-Agent; 0 for a signed request, which is checked every time",
+            "description": "Seconds this answer may be reused for the exact same user agent, address and Signature-Agent; 0 for a signed request, which is checked every time, and for a request the server could not use",
             "format": "int64",
             "type": "integer"
           },
           "visitor_kind": {
-            "description": "human, ai_bot, automation or search_crawler. New values can be added within API v1, so accept values not listed here.",
+            "description": "human, ai_bot, automation or search_crawler; unknown for a request the server could not use (a field over its limit, an address that is not one literal, or a count over 1000000), which is neither classified nor counted. New values can be added within API v1, so accept values not listed here.",
             "enum": [
               "human",
               "ai_bot",
               "automation",
-              "search_crawler"
+              "search_crawler",
+              "unknown"
             ],
             "type": "string"
           }
