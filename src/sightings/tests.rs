@@ -851,6 +851,83 @@ async fn flush_gets_the_flight_lock_after_the_batch_in_flight() {
 }
 
 #[tokio::test]
+async fn a_host_over_4096_bytes_as_sent_is_left_out_and_a_longer_method_not_reported() {
+    let clock = FakeClock::new();
+    let (sightings, failures) = component("http://127.0.0.1:9", &clock);
+
+    // 2000 bytes received, 6000 sent once each is replaced with U+FFFD: the
+    // request is reported without its host, under the same key.
+    let mut long_host = signed("GPTBot/1.4", "20.171.206.9");
+    long_host
+        .headers
+        .insert("host", HeaderValue::from_bytes(&[0xff; 2000]).unwrap());
+    let observed = sightings.inner().observe(&long_host).unwrap();
+    assert!(observed.item.host.is_none());
+    assert!(observed.signed);
+    assert_eq!(
+        observed.key,
+        sightings
+            .inner()
+            .observe(&signed("GPTBot/1.4", "20.171.206.9"))
+            .unwrap()
+            .key
+    );
+
+    let mut long_method = parts("GPTBot/1.4", "20.171.206.9");
+    long_method.method = http::Method::from_bytes("M".repeat(4097).as_bytes()).unwrap();
+    assert!(sightings.inner().observe(&long_method).is_none());
+    sightings.report(&long_method, &html());
+    assert!(sightings.lookup_parts(&long_method).is_unknown());
+    assert!(pending_counts(&sightings).is_empty());
+    assert!(failures.lock().unwrap().is_empty(), "nothing to report");
+
+    // At the limit, both are sent.
+    let mut at_limit = parts("GPTBot/1.4", "20.171.206.9");
+    at_limit
+        .headers
+        .insert("host", HeaderValue::from_str(&"h".repeat(4096)).unwrap());
+    at_limit.method = http::Method::from_bytes("M".repeat(4096).as_bytes()).unwrap();
+    let observed = sightings.inner().observe(&at_limit).unwrap();
+    assert_eq!(observed.item.host.as_deref().map(str::len), Some(4096));
+    assert_eq!(observed.item.method.as_deref().map(str::len), Some(4096));
+}
+
+#[tokio::test]
+async fn a_batch_of_the_largest_items_fits_the_apis_body_limit() {
+    let server = TestServer::always(ok("r1", &[600])).await;
+    let clock = FakeClock::new();
+    let (sightings, _) = component(&server.base_url, &clock);
+
+    // A host the HTTP stack accepts, which grows to 1.2 MB as text.
+    let mut huge = parts("GPTBot/1.4", "20.171.206.9");
+    let host = HeaderValue::from_bytes(&[0xff; 400_000]).unwrap();
+    huge.headers.insert("host", host);
+    sightings.report(&huge, &html());
+    // Every other field at its limit as sent, made of the character JSON
+    // escapes to two bytes: the most an item can weigh in the body.
+    let quotes = |n: usize| HeaderValue::from_str(&"\"".repeat(n)).unwrap();
+    for i in 0..20 {
+        let mut parts = parts(&format!("{i:04}{}", "\"".repeat(4092)), "20.171.206.9");
+        parts.headers.insert("host", quotes(4096));
+        parts.method = http::Method::from_bytes("M".repeat(4096).as_bytes()).unwrap();
+        parts.headers.insert("signature", quotes(4096));
+        parts.headers.insert("signature-input", quotes(4096));
+        parts.headers.insert("signature-agent", quotes(4096));
+        sightings.report(&parts, &html());
+    }
+    assert!(!pending_counts(&sightings).is_empty());
+    sightings.flush().await;
+    let largest = server
+        .requests()
+        .iter()
+        .map(|request| request.body.len())
+        .max()
+        .unwrap_or_default();
+    assert!(largest > 0, "nothing was sent");
+    assert!(largest < 1 << 20, "a body of {largest} bytes");
+}
+
+#[tokio::test]
 async fn a_request_without_a_valid_address_is_not_reported() {
     let clock = FakeClock::new();
     let (sightings, failures) = component("http://127.0.0.1:9", &clock);

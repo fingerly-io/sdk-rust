@@ -713,7 +713,7 @@ delays it.
 
 | Sent | Never sent |
 | --- | --- |
-| The `User-Agent` as received (a request with one over 4096 bytes is not reported), the client address from `client_ip`, the `Host`, the method, the Web Bot Auth `Signature`, `Signature-Input` and `Signature-Agent` headers (each left out over 4096 bytes), and how many times the same request was served since the last report. | The path, the query string, cookies, `Authorization`, any other header, the request body and the response. None of the reported fields is logged. |
+| The `User-Agent` and the method as received (a request with either over 4096 bytes is not reported), the client address from `client_ip`, the `Host`, the Web Bot Auth `Signature`, `Signature-Input` and `Signature-Agent` headers (each left out over 4096 bytes), and how many times the same request was served since the last report. | The path, the query string, cookies, `Authorization`, any other header, the request body and the response. None of the reported fields is logged. |
 
 ### Memory, batching and failures
 

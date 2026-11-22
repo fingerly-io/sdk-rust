@@ -32,7 +32,9 @@ use crate::models::{AgentAnswer, AgentAnswers, AgentSighting, AiAgent};
 use crate::proxy::{resolve_client_ip, signature_header, ClientIpFn};
 use crate::transport::{ANSWER_BROKE_OFF, HUNG_UP_AFTER_SENDING};
 
-/// The longest user agent reported, in bytes. A longer one is not reported.
+/// The longest user agent or method reported, in bytes as sent: a request
+/// with a longer one is not reported. A longer `Host` or Web Bot Auth header
+/// is left out.
 const MAX_HEADER_BYTES: usize = 4096;
 /// A flush sends at most this many items.
 const BATCH_ITEMS: usize = 200;
@@ -557,12 +559,28 @@ impl Inner {
     }
 
     /// Reads a request as it would be reported, or `None` when it cannot be:
-    /// a user agent over 4096 bytes, or no valid client address.
+    /// a user agent or method over 4096 bytes as sent, or no valid client
+    /// address.
     pub(crate) fn observe(&self, parts: &Parts) -> Option<Observed> {
         let user_agent = parts.headers.get(USER_AGENT).map(text).unwrap_or_default();
         if user_agent.len() > MAX_HEADER_BYTES {
             return None;
         }
+        // No real host name or method comes near 4096 bytes. Bounding them
+        // bounds every item, so a batch always fits the API's 1 MiB body
+        // limit: one item past it would be refused with its whole batch. The
+        // `Host` serves only to check a signature, so a longer one is left
+        // out, as a longer Web Bot Auth header is.
+        let method = parts.method.as_str().to_owned();
+        if method.len() > MAX_HEADER_BYTES {
+            return None;
+        }
+        let host = parts
+            .headers
+            .get(HOST)
+            .map(text)
+            .or_else(|| parts.uri.authority().map(|authority| authority.to_string()))
+            .filter(|host| host.len() <= MAX_HEADER_BYTES);
         let Some(address) = resolve_client_ip(&*self.client_ip, parts) else {
             self.report_failure(
                 AgentSightingsErrorKind::InvalidClientIp,
@@ -573,11 +591,6 @@ impl Inner {
             return None;
         };
         let client_ip = canonical_ip(address);
-        let host = parts
-            .headers
-            .get(HOST)
-            .map(text)
-            .or_else(|| parts.uri.authority().map(|authority| authority.to_string()));
         // A Web Bot Auth header over 4096 bytes is left out, and then counts
         // as absent for the key too, so the key matches what is sent. The
         // limit applies to the text sent, after U+FFFD replaces each byte that
@@ -598,7 +611,6 @@ impl Inner {
             signature_agent.as_deref().unwrap_or(""),
             signed,
         );
-        let method = parts.method.as_str().to_owned();
 
         let field = |value: &Option<String>| value.as_ref().map_or(0, String::len);
         let bytes = user_agent.len()
